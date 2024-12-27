@@ -23,6 +23,8 @@ from wsgiref.util import FileWrapper
 
 import io
 
+import random
+
 from docxtpl import DocxTemplate
 from .generators import gen_audit_context
 
@@ -833,7 +835,7 @@ class RiskAssessmentViewSet(BaseModelViewSet):
             risk_assessment = self.get_object()
             context = RiskScenario.objects.filter(
                 risk_assessment=risk_assessment
-            ).order_by("created_at")
+            ).order_by("ref_id")
             data = {
                 "context": context,
                 "risk_assessment": risk_assessment,
@@ -1168,6 +1170,72 @@ class AppliedControlViewSet(BaseModelViewSet):
                 "links": links,
             }
         )
+
+    @action(detail=False, name="Get priority chart data")
+    def priority_chart_data(self, request):
+        qs = AppliedControl.objects.exclude(status="active")
+
+        data = {
+            "--": [],
+            "to_do": [],
+            "in_progress": [],
+            "on_hold": [],
+            "deprecated": [],
+        }
+        angle_offsets = {"4": 0, "3": 90, "1": 180, "2": 270}
+        status_offset = {
+            "--": 4,
+            "to_do": 12,
+            "in_progress": 20,
+            "on_hold": 28,
+            "deprecated": 36,
+        }
+
+        not_displayed_cnt = 0
+
+        p_dict = qs.aggregate(
+            p1=Count("priority", filter=Q(priority=1)),
+            p2=Count("priority", filter=Q(priority=2)),
+            p3=Count("priority", filter=Q(priority=3)),
+            p4=Count("priority", filter=Q(priority=4)),
+        )
+        for ac in qs:
+            if ac.priority:
+                if ac.eta:
+                    days_countdown = min(100, ac.days_until_eta)
+                    # how many days until the ETA
+                else:
+                    days_countdown = 100
+                impact_factor = 5 + ac.links_count
+
+                # angle = angle_offsets[str(ac.priority)]+ (next(offsets) % 80) + random.randint(1,4)
+                angle = (
+                    angle_offsets[str(ac.priority)]
+                    + status_offset[ac.status]
+                    + random.randint(1, 40)
+                )
+                # angle = angle_offsets[str(ac.priority)] + next(offsets)
+
+                vector = [
+                    days_countdown,
+                    angle,
+                    impact_factor,
+                    f"[{ac.priority}] {str(ac)}",
+                    ac.status,
+                    ac.id,
+                ]
+                if ac.status:
+                    data[ac.status].append(vector)
+                else:
+                    data["unclassified"].append(vector)
+            else:
+                print("priority unset - add it to triage lot")
+                not_displayed_cnt += 1
+
+        data["not_displayed"] = not_displayed_cnt
+        data["priority_cnt"] = p_dict
+
+        return Response(data)
 
     @action(detail=False, methods=["get"])
     def get_timeline_info(self, request):
@@ -1978,7 +2046,8 @@ def get_composer_data(request):
     risk_assessments = risk_assessments.split(",")
     if not all(
         re.fullmatch(
-            r"([0-9a-f]{8}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{12})",  # UUID REGEX
+            # UUID REGEX
+            r"([0-9a-f]{8}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{4}\-[0-9a-f]{12})",
             risk_assessment,
         )
         for risk_assessment in risk_assessments

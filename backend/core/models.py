@@ -1267,6 +1267,48 @@ class Qualification(ReferentialObjectMixin, I18nObjectMixin):
             "name": "Financial",
             "urn": "urn:intuitem:risk:qualification:financial",
         },
+        {
+            "abbreviation": "Gov",
+            "qualification_ordering": 12,
+            "name": "Governance",
+            "urn": "urn:intuitem:risk:qualification:governance",
+        },
+        {
+            "abbreviation": "Mis",
+            "qualification_ordering": 13,
+            "name": "Missions and Organizational Services",
+            "urn": "urn:intuitem:risk:qualification:missions",
+        },
+        {
+            "abbreviation": "Hum",
+            "qualification_ordering": 14,
+            "name": "Human",
+            "urn": "urn:intuitem:risk:qualification:human",
+        },
+        {
+            "abbreviation": "Mat",
+            "qualification_ordering": 15,
+            "name": "Material",
+            "urn": "urn:intuitem:risk:qualification:material",
+        },
+        {
+            "abbreviation": "Env",
+            "qualification_ordering": 16,
+            "name": "Environmental",
+            "urn": "urn:intuitem:risk:qualification:environmental",
+        },
+        {
+            "abbreviation": "Img",
+            "qualification_ordering": 17,
+            "name": "Image",
+            "urn": "urn:intuitem:risk:qualification:image",
+        },
+        {
+            "abbreviation": "Tru",
+            "qualification_ordering": 18,
+            "name": "Trust",
+            "urn": "urn:intuitem:risk:qualification:trust",
+        },
     ]
 
     abbreviation = models.CharField(
@@ -1851,6 +1893,19 @@ class AppliedControl(NameDescriptionMixin, FolderMixin, PublishInRootFolderMixin
             requirementassessment__applied_controls=self
         ).count()
 
+    @property
+    def links_count(self):
+        reqs = 0  # compliance requirements
+        scenarios = 0  # risk scenarios
+        sh_actions = 0  # stakeholder tprm actions
+
+        reqs = RequirementNode.objects.filter(
+            requirementassessment__applied_controls=self
+        ).count()
+        scenarios = RiskScenario.objects.filter(applied_controls=self).count()
+
+        return reqs + scenarios + sh_actions
+
     def has_evidences(self):
         return self.evidences.count() > 0
 
@@ -1858,6 +1913,14 @@ class AppliedControl(NameDescriptionMixin, FolderMixin, PublishInRootFolderMixin
         return (
             self.eta < date.today() and self.status != "active" if self.eta else False
         )
+
+    @property
+    def days_until_eta(self):
+        if not self.eta:
+            return None
+        days_remaining = (self.eta - date.today()).days
+
+        return max(-1, days_remaining)
 
 
 class PolicyManager(models.Manager):

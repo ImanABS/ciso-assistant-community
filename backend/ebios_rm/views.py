@@ -1,7 +1,7 @@
 import django_filters as df
 from core.serializers import RiskMatrixReadSerializer
 from core.views import BaseModelViewSet as AbstractBaseModelViewSet
-from core.serializers import RiskMatrixReadSerializer
+from .helpers import ecosystem_radar_chart_data
 from .models import (
     EbiosRMStudy,
     FearedEvent,
@@ -84,6 +84,12 @@ class EbiosRMStudyViewSet(BaseModelViewSet):
         )
         return Response(EbiosRMStudyReadSerializer(ebios_rm_study).data)
 
+    @action(detail=True, name="Get ecosystem radar chart data")
+    def ecosystem_chart_data(self, request, pk):
+        return Response(
+            ecosystem_radar_chart_data(Stakeholder.objects.filter(ebios_rm_study=pk))
+        )
+
 
 class FearedEventViewSet(BaseModelViewSet):
     model = FearedEvent
@@ -156,6 +162,10 @@ class StakeholderViewSet(BaseModelViewSet):
     @action(detail=False, name="Get category choices")
     def category(self, request):
         return Response(dict(Stakeholder.Category.choices))
+
+    @action(detail=False, name="Get chart data")
+    def chart_data(self, request):
+        return Response(ecosystem_radar_chart_data(Stakeholder.objects.all()))
 
 
 class StrategicScenarioViewSet(BaseModelViewSet):

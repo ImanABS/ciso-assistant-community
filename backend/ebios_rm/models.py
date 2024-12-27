@@ -10,6 +10,7 @@ from core.models import (
     Qualification,
     RiskMatrix,
     Threat,
+    RiskAssessment,
 )
 from core.validators import (
     JSONSchemaInstanceValidator,
@@ -192,6 +193,19 @@ class EbiosRMStudy(NameDescriptionMixin, ETADueDateMixin, FolderMixin):
     def applied_control_count(self):
         return AppliedControl.objects.filter(stakeholders__ebios_rm_study=self).count()
 
+    @property
+    def last_risk_assessment(self):
+        """Get the latest risk assessment for the study
+        Returns:
+            RiskAssessment: The latest risk assessment for the study
+        """
+        try:
+            return RiskAssessment.objects.filter(ebios_rm_study=self).latest(
+                "created_at"
+            )
+        except RiskAssessment.DoesNotExist:
+            return None
+
     def update_workshop_step_status(self, workshop: int, step: int, new_status: str):
         if workshop < 1 or workshop > 5:
             raise ValueError("Workshop must be between 1 and 5")
@@ -259,6 +273,8 @@ class FearedEvent(NameDescriptionMixin, FolderMixin):
                 "hexcolor": "#f9fafb",
             }
         risk_matrix = self.parsed_matrix
+        if not risk_matrix["impact"][self.gravity].get("hexcolor"):
+            risk_matrix["impact"][self.gravity]["hexcolor"] = "#f9fafb"
         return {
             **risk_matrix["impact"][self.gravity],
             "value": self.gravity,
@@ -463,7 +479,7 @@ class Stakeholder(AbstractBaseModel, FolderMixin):
         return self.__class__.objects.filter(ebios_rm_study=self.ebios_rm_study)
 
     def __str__(self):
-        return f"{self.entity.name} - {self.get_category_display()}"
+        return f"{self.entity.name}-{self.get_category_display()}"
 
     def save(self, *args, **kwargs):
         self.folder = self.ebios_rm_study.folder
