@@ -1,6 +1,6 @@
 import { LoginPage } from '../utils/login-page.js';
 import { test, expect, setHttpResponsesListener, TestContent } from '../utils/test-utils.js';
-import * as m from '$paraglide/messages';
+import { m } from '$paraglide/messages';
 const vars = TestContent.generateTestVars();
 
 test('user usual routine actions are working correctly', async ({
@@ -65,7 +65,7 @@ test('user usual routine actions are working correctly', async ({
 	});
 
 	await test.step('user can create an asset', async () => {
-		await sideBar.click('Organization', pages.assetsPage.url);
+		await sideBar.click('Assetsmanagement', pages.assetsPage.url);
 		await pages.assetsPage.hasUrl();
 		await pages.assetsPage.hasTitle();
 
@@ -84,8 +84,8 @@ test('user usual routine actions are working correctly', async ({
 		await pages.frameworksPage.hasUrl();
 		await pages.frameworksPage.hasTitle();
 
-		await pages.frameworksPage.addButton.click();
-		await pages.librariesPage.hasTitle();
+		await pages.frameworksPage.importButton.click();
+		await pages.librariesPage.goto();
 		await pages.librariesPage.hasTitle();
 
 		await pages.librariesPage.importLibrary(vars.framework.ref, vars.framework.urn);
@@ -159,6 +159,7 @@ test('user usual routine actions are working correctly', async ({
 		await pages.complianceAssessmentsPage.createItem({
 			name: vars.assessmentName,
 			description: vars.description,
+			folder: vars.folderName,
 			perimeter: vars.folderName + '/' + vars.perimeterName,
 			version: '1.4.2',
 			status: 'Done',
@@ -191,8 +192,8 @@ test('user usual routine actions are working correctly', async ({
 		await pages.riskMatricesPage.hasUrl();
 		await pages.riskMatricesPage.hasTitle();
 
-		await pages.riskMatricesPage.addButton.click();
-		await pages.librariesPage.hasUrl(true, '/libraries?object_type=risk_matrix');
+		await pages.riskMatricesPage.importButton.click();
+		await pages.librariesPage.hasUrl(true, '/libraries?object_type=risk_matrices');
 		await pages.librariesPage.hasTitle();
 
 		await pages.librariesPage.importLibrary(vars.matrix.name, vars.matrix.urn);
@@ -210,12 +211,11 @@ test('user usual routine actions are working correctly', async ({
 		await pages.riskAssessmentsPage.createItem({
 			name: vars.riskAssessmentName,
 			description: vars.description,
+			folder: vars.folderName,
 			perimeter: vars.folderName + '/' + vars.perimeterName,
 			version: vars.riskAssessmentVersion,
 			status: 'Done',
-			risk_matrix: vars.matrix.displayName,
-			eta: '2025-01-01',
-			due_date: '2025-05-01'
+			risk_matrix: vars.matrix.displayName
 		});
 
 		//TODO assert that the risk assessment data are displayed in the table
@@ -244,7 +244,7 @@ test('user usual routine actions are working correctly', async ({
 		await pages.riskScenariosPage.createItem({
 			name: vars.riskScenarioName,
 			description: vars.description,
-			risk_assessment: `${vars.folderName}/${vars.perimeterName}/${vars.riskAssessmentName} - ${vars.riskAssessmentVersion}`,
+			risk_assessment: `${vars.folderName}/${vars.riskAssessmentName} - ${vars.riskAssessmentVersion}`,
 			threats: [`${vars.folderName}/${vars.threatName}`]
 		});
 
@@ -263,7 +263,7 @@ test('user usual routine actions are working correctly', async ({
 			folder: vars.folderName,
 			approver: LoginPage.defaultEmail,
 			risk_scenarios: [
-				`${vars.folderName}/${vars.perimeterName}/${vars.riskAssessmentName} - ${vars.riskAssessmentVersion}/${vars.riskScenarioName}`
+				`${vars.folderName}/${vars.riskAssessmentName} - ${vars.riskAssessmentVersion}/${vars.riskScenarioName}`
 			]
 		});
 
@@ -292,7 +292,9 @@ test.afterEach('cleanup', async ({ foldersPage, usersPage, page }) => {
 	await expect(foldersPage.getRow(vars.folderName)).not.toBeVisible();
 
 	await usersPage.goto();
-	await usersPage.deleteItemButton(vars.user.email).click();
-	await usersPage.deleteModalConfirmButton.click();
-	await expect(usersPage.getRow(vars.user.email)).not.toBeVisible();
+	if (await usersPage.getRow(vars.user.email).isVisible()) {
+		await usersPage.deleteItemButton(vars.user.email).click();
+		await usersPage.deleteModalConfirmButton.click();
+		await expect(usersPage.getRow(vars.user.email)).not.toBeVisible();
+	}
 });

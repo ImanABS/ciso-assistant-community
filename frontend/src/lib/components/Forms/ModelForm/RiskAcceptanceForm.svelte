@@ -1,18 +1,30 @@
 <script lang="ts">
 	import AutocompleteSelect from '../AutocompleteSelect.svelte';
+	import FolderTreeSelect from '../FolderTreeSelect.svelte';
 	import TextField from '$lib/components/Forms/TextField.svelte';
 	import TextArea from '$lib/components/Forms/TextArea.svelte';
 	import type { SuperValidated } from 'sveltekit-superforms';
 	import type { ModelInfo, CacheLock } from '$lib/utils/types';
-	import { page } from '$app/stores';
-	import * as m from '$paraglide/messages.js';
+	import { page } from '$app/state';
+	import { m } from '$paraglide/messages';
 
-	export let form: SuperValidated<any>;
-	export let model: ModelInfo;
-	export let cacheLocks: Record<string, CacheLock> = {};
-	export let formDataCache: Record<string, any> = {};
-	export let object: Record<string, any> = {};
-	export let initialData: Record<string, any> = {};
+	interface Props {
+		form: SuperValidated<any>;
+		model: ModelInfo;
+		cacheLocks?: Record<string, CacheLock>;
+		formDataCache?: Record<string, any>;
+		object?: Record<string, any>;
+		initialData?: Record<string, any>;
+	}
+
+	let {
+		form,
+		model,
+		cacheLocks = {},
+		formDataCache = $bindable({}),
+		object = {},
+		initialData = {}
+	}: Props = $props();
 </script>
 
 <TextField
@@ -24,9 +36,9 @@
 	cacheLock={cacheLocks['expiry_date']}
 	bind:cachedValue={formDataCache['expiry_date']}
 />
-{#if object.id && $page.data.user.id === object.approver}
+{#if object.id && page.data.user.id === object.approver}
 	<TextArea
-		disabled={$page.data.user.id !== object.approver}
+		disabled={page.data.user.id !== object.approver}
 		{form}
 		field="justification"
 		label={m.justification()}
@@ -35,14 +47,12 @@
 		bind:cachedValue={formDataCache['justification']}
 	/>
 {/if}
-<AutocompleteSelect
+<FolderTreeSelect
 	{form}
-	optionsEndpoint="folders?content_type=DO"
 	field="folder"
 	cacheLock={cacheLocks['folder']}
 	bind:cachedValue={formDataCache['folder']}
 	label={m.domain()}
-	hidden={initialData.folder}
 />
 <AutocompleteSelect
 	{form}
@@ -59,7 +69,7 @@
 	{form}
 	optionsEndpoint="risk-scenarios"
 	optionsExtraFields={[
-		['perimeter', 'str'],
+		['folder', 'str'],
 		['risk_assessment', 'str']
 	]}
 	field="risk_scenarios"

@@ -2,13 +2,19 @@
 	import RecursiveTreeView from '$lib/components/TreeView/RecursiveTreeView.svelte';
 	import { URL_MODEL_MAP } from '$lib/utils/crud';
 	import { safeTranslate } from '$lib/utils/i18n';
-	import * as m from '$paraglide/messages';
-	import type { TreeViewNode } from '@skeletonlabs/skeleton';
+	import { m } from '$paraglide/messages';
+	import type { TreeViewNode } from '@skeletonlabs/skeleton-svelte';
 	import type { PageData } from './$types';
 	import TreeViewItemContent from './TreeViewItemContent.svelte';
 	import Anchor from '$lib/components/Anchor/Anchor.svelte';
+	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import FrameworlEquivalence from '$lib/components/FrameworkEquivalence/FrameworlEquivalence.svelte';
 
-	export let data: PageData;
+	interface Props {
+		data: PageData;
+	}
+
+	let { data }: Props = $props();
 
 	const tree = data.tree;
 
@@ -38,13 +44,26 @@
 		}
 		return count;
 	}
+
+	const blacklistedKeys: Set<string> = new Set([
+		'id',
+		'created_at',
+		'reference_controls',
+		'has_update'
+	]);
 </script>
 
 <div class="flex flex-col space-y-4 whitespace-pre-line">
 	<div class="card px-6 py-4 bg-white flex flex-row justify-between shadow-lg">
 		<div class="">
+			<div class="mb-1">
+				{#if data.framework.has_update}
+					<i title={m.updateAvailable()} class="fa-solid fa-circle-up text-success-600-400"></i>
+					<span>{m.updateAvailable()}</span>
+				{/if}
+			</div>
 			<div class="flex flex-col space-y-2">
-				{#each Object.entries(data.framework).filter(([key, _]) => key !== 'id' && key !== 'created_at' && key !== 'reference_controls') as [key, value]}
+				{#each Object.entries(data.framework).filter(([key, _]) => !blacklistedKeys.has(key)) as [key, value]}
 					<div class="flex flex-col">
 						<div class="text-sm font-medium text-gray-800 capitalize-first">
 							{#if key === 'urn'}
@@ -102,6 +121,8 @@
 											)?.urlModel
 										}/${value.id}`}
 										<Anchor href={itemHref} class="anchor">{value.str}</Anchor>
+									{:else if key === 'description'}
+										<MarkdownRenderer content={value} />
 									{:else}
 										{value.str ?? value}
 									{/if}
@@ -117,8 +138,9 @@
 			</div>
 		</div>
 		<div class="">
-			<a class="btn variant-filled-primary" href="/frameworks/{data.framework.id}/excel-template/"
-				>Download Excel template</a
+			<a
+				class="btn preset-filled-primary-500"
+				href="/frameworks/{data.framework.id}/excel-template/">Download Excel template</a
 			>
 		</div>
 	</div>
@@ -126,10 +148,20 @@
 	<div class="card px-6 py-4 bg-white flex flex-col shadow-lg">
 		<h4 class="h4 flex items-center font-semibold">
 			{m.associatedRequirements()}
-			<span class="badge variant-soft-primary ml-1">
+			<span class="badge preset-tonal-primary ml-1">
 				{assessableNodesCount(treeViewNodes)}
 			</span>
 		</h4>
 		<RecursiveTreeView nodes={treeViewNodes} hover="hover:bg-initial" />
 	</div>
+	<!-- EQUIVALENCE WITH OTHER FRAMEWORKS -->
+	<!-- <div class="card px-6 py-4 bg-white flex flex-col shadow-lg">
+		<span class="h4">
+			Equivalences
+		</span>
+		<FrameworlEquivalence
+		coverages={data.coverages}
+		>
+		</FrameworlEquivalence>
+	 </div> -->
 </div>

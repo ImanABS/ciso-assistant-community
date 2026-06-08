@@ -1,26 +1,35 @@
 <script lang="ts">
 	import AutocompleteSelect from '../AutocompleteSelect.svelte';
+	import FolderTreeSelect from '../FolderTreeSelect.svelte';
 	import Select from '../Select.svelte';
 	import TextField from '$lib/components/Forms/TextField.svelte';
 	import type { SuperValidated } from 'sveltekit-superforms';
 	import type { ModelInfo, CacheLock } from '$lib/utils/types';
-	import * as m from '$paraglide/messages.js';
+	import { m } from '$paraglide/messages';
 
-	export let form: SuperValidated<any>;
-	export let model: ModelInfo;
-	export let cacheLocks: Record<string, CacheLock> = {};
-	export let formDataCache: Record<string, any> = {};
-	export let initialData: Record<string, any> = {};
+	interface Props {
+		form: SuperValidated<any>;
+		model: ModelInfo;
+		cacheLocks?: Record<string, CacheLock>;
+		formDataCache?: Record<string, any>;
+		initialData?: Record<string, any>;
+	}
+
+	let {
+		form,
+		model,
+		cacheLocks = {},
+		formDataCache = $bindable({}),
+		initialData = {}
+	}: Props = $props();
 </script>
 
-<AutocompleteSelect
+<FolderTreeSelect
 	{form}
-	optionsEndpoint="folders?content_type=DO&content_type=GL"
 	field="folder"
 	cacheLock={cacheLocks['folder']}
 	bind:cachedValue={formDataCache['folder']}
 	label={m.domain()}
-	hidden={initialData.folder}
 />
 
 <Select
@@ -34,17 +43,29 @@
 
 <Select
 	{form}
-	options={[
-		{ label: '--', value: -1 },
-		{ label: m.low(), value: 0 },
-		{ label: m.medium(), value: 1 },
-		{ label: m.high(), value: 2 },
-		{ label: m.critical(), value: 3 }
-	]}
+	options={model.selectOptions['severity']}
 	field="severity"
 	label={m.severity()}
 	cacheLock={cacheLocks['severity']}
 	bind:cachedValue={formDataCache['severity']}
+/>
+<AutocompleteSelect
+	multiple
+	lazy
+	{form}
+	optionsEndpoint="assets"
+	optionsLabelField="auto"
+	optionsExtraFields={[['folder', 'str']]}
+	optionsInfoFields={{
+		fields: [
+			{
+				field: 'type'
+			}
+		],
+		classes: 'text-blue-500'
+	}}
+	field="assets"
+	label={m.assets()}
 />
 <AutocompleteSelect
 	multiple
@@ -76,6 +97,7 @@
 	{form}
 	createFromSelection={true}
 	optionsEndpoint="filtering-labels"
+	translateOptions={false}
 	optionsLabelField="label"
 	field="filtering_labels"
 	helpText={m.labelsHelpText()}

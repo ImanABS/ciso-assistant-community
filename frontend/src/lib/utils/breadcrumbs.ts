@@ -1,6 +1,6 @@
 import { writable } from 'svelte/store';
 import { goto as _goto } from '$app/navigation';
-import * as m from '$paraglide/messages';
+import { m } from '$paraglide/messages';
 
 export interface Breadcrumb {
 	label: string;
@@ -10,7 +10,13 @@ export interface Breadcrumb {
 
 const BREADCRUMBS_MAX_DEPTH = 5;
 
-const homeCrumb: Breadcrumb = { label: m.home(), href: '/', icon: 'fa-regular fa-compass' };
+const homeCrumb: Breadcrumb = {
+	get label() {
+		return m.home();
+	},
+	href: '/',
+	icon: 'fa-regular fa-compass'
+};
 
 const createBreadcrumbs = (initialValue: Breadcrumb[]) => {
 	const breadcrumbs = writable<Breadcrumb[]>(initialValue);
@@ -33,6 +39,18 @@ const createBreadcrumbs = (initialValue: Breadcrumb[]) => {
 		});
 	}
 
+	function updateCrumb(hrefPattern: RegExp, updatedCrumb: Breadcrumb) {
+		breadcrumbs.update((crumbs) => {
+			for (let i = 0; i < crumbs.length; i++) {
+				const crumb = crumbs[i];
+				if (hrefPattern.test(crumb.href ?? '')) {
+					crumbs[i] = { ...crumb, ...updatedCrumb };
+				}
+			}
+			return crumbs;
+		});
+	}
+
 	function replace(crumb: Breadcrumb[]) {
 		breadcrumbs.update(() => {
 			return mergeCrumbs([homeCrumb, ...crumb]);
@@ -48,6 +66,7 @@ const createBreadcrumbs = (initialValue: Breadcrumb[]) => {
 	return {
 		...breadcrumbs,
 		push,
+		updateCrumb,
 		replace,
 		slice
 	};
@@ -57,7 +76,7 @@ export const breadcrumbs = createBreadcrumbs([homeCrumb]);
 
 export function goto(
 	url: string,
-	_opts: { crumbs: typeof breadcrumbs; label: string; breadcrumbAction: 'push' | 'replace' } = {}
+	_opts: { crumbs?: typeof breadcrumbs; label: string; breadcrumbAction: 'push' | 'replace' } = {}
 ) {
 	const opts = {
 		crumbs: breadcrumbs,

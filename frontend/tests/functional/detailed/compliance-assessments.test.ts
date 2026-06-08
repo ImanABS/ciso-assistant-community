@@ -1,7 +1,7 @@
 import { LoginPage } from '../../utils/login-page.js';
 import { PageContent } from '../../utils/page-content.js';
 import { TestContent, test, expect } from '../../utils/test-utils.js';
-import * as m from '$paraglide/messages';
+import { m } from '$paraglide/messages';
 
 let vars = TestContent.generateTestVars();
 let testObjectsData: { [k: string]: any } = TestContent.itemBuilder(vars);
@@ -13,26 +13,25 @@ test('compliance assessments scoring is working properly', async ({
 	page
 }) => {
 	const testRequirements = ['folders', 'perimeters', 'complianceAssessments'];
+	const maxScore = 4;
 	const IDAM1Score = {
 		ratio: 0.66,
-		progress: '75',
 		value: 3
 	};
 	const IDAM2Score = {
 		ratio: 0.33,
-		progress: '50',
 		value: 2
 	};
 	const IDBE1Score = {
 		ratio: 0.99,
-		progress: '100',
 		value: 4
 	};
 	const PRAC1Score = {
 		ratio: 0.0,
-		progress: '25',
 		value: 1
 	};
+	// Helper to convert raw score to percentage for tree view assertions
+	const toPercent = (score: number) => ((score / maxScore) * 100).toString();
 
 	for (let requirement of testRequirements) {
 		requirement += 'Page';
@@ -62,8 +61,11 @@ test('compliance assessments scoring is working properly', async ({
 	await IDAM1TreeViewItem.content.click();
 
 	await page.waitForURL('/requirement-assessments/**');
-	await page.getByTestId('slide-toggle').click({ force: true });
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute('aria-valuenow', '25');
+	await page.getByTestId('form-input-is-scored').click();
+	if (!page.getByTestId('progress-ring-svg').isVisible()) {
+		await page.getByTestId('form-input-is-scored').click();
+	}
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute('data-value', '1');
 
 	const IDAM1SliderBoundingBox = await page.getByTestId('range-slider-input').boundingBox();
 	IDAM1SliderBoundingBox &&
@@ -73,16 +75,18 @@ test('compliance assessments scoring is working properly', async ({
 				y: IDAM1SliderBoundingBox.height / 2
 			}
 		}));
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute(
-		'aria-valuenow',
-		IDAM1Score.progress
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute(
+		'data-value',
+		IDAM1Score.value.toString()
 	);
 
-	await complianceAssessmentsPage.form.saveButton.click();
+	await page.getByTestId('save-no-continue-button').click();
+	await complianceAssessmentsPage.isToastVisible('successfully saved', 'i');
+	await page.goBack();
 	await page.waitForURL(complianceAssessmentsPage.url + '/**');
 	await expect(IDAM1TreeViewItem.progressRadial).toHaveAttribute(
-		'aria-valuenow',
-		IDAM1Score.progress
+		'data-value',
+		toPercent(IDAM1Score.value)
 	);
 
 	// Click on the ID.AM-2 tree view item
@@ -93,8 +97,11 @@ test('compliance assessments scoring is working properly', async ({
 	await IDAM2TreeViewItem.content.click();
 
 	await page.waitForURL('/requirement-assessments/**');
-	await page.getByTestId('slide-toggle').click({ force: true });
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute('aria-valuenow', '25');
+	await page.getByTestId('form-input-is-scored').click();
+	if (!page.getByTestId('progress-ring-svg').isVisible()) {
+		await page.getByTestId('form-input-is-scored').click();
+	}
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute('data-value', '1');
 
 	const IDAM2SliderBoundingBox = await page.getByTestId('range-slider-input').boundingBox();
 	IDAM2SliderBoundingBox &&
@@ -104,16 +111,18 @@ test('compliance assessments scoring is working properly', async ({
 				y: IDAM2SliderBoundingBox.height / 2
 			}
 		}));
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute(
-		'aria-valuenow',
-		IDAM2Score.progress
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute(
+		'data-value',
+		IDAM2Score.value.toString()
 	);
 
-	await complianceAssessmentsPage.form.saveButton.click();
+	await page.getByTestId('save-no-continue-button').click();
+	await complianceAssessmentsPage.isToastVisible('successfully saved', 'i');
+	await page.goBack();
 	await page.waitForURL(complianceAssessmentsPage.url + '/**');
 	await expect(IDAM2TreeViewItem.progressRadial).toHaveAttribute(
-		'aria-valuenow',
-		IDAM2Score.progress
+		'data-value',
+		toPercent(IDAM2Score.value)
 	);
 
 	// Click on the ID.BE-1 tree view item
@@ -124,8 +133,11 @@ test('compliance assessments scoring is working properly', async ({
 	await IDBE1TreeViewItem.content.click();
 
 	await page.waitForURL('/requirement-assessments/**');
-	await page.getByTestId('slide-toggle').click({ force: true });
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute('aria-valuenow', '25');
+	await page.getByTestId('form-input-is-scored').click();
+	if (!page.getByTestId('progress-ring-svg').isVisible()) {
+		await page.getByTestId('form-input-is-scored').click();
+	}
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute('data-value', '1');
 
 	const IDBE1SliderBoundingBox = await page.getByTestId('range-slider-input').boundingBox();
 	IDBE1SliderBoundingBox &&
@@ -135,16 +147,18 @@ test('compliance assessments scoring is working properly', async ({
 				y: IDBE1SliderBoundingBox.height / 2
 			}
 		}));
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute(
-		'aria-valuenow',
-		IDBE1Score.progress
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute(
+		'data-value',
+		IDBE1Score.value.toString()
 	);
 
-	await complianceAssessmentsPage.form.saveButton.click();
+	await page.getByTestId('save-no-continue-button').click();
+	await complianceAssessmentsPage.isToastVisible('successfully saved', 'i');
+	await page.goBack();
 	await page.waitForURL(complianceAssessmentsPage.url + '/**');
 	await expect(IDBE1TreeViewItem.progressRadial).toHaveAttribute(
-		'aria-valuenow',
-		IDBE1Score.progress
+		'data-value',
+		toPercent(IDBE1Score.value)
 	);
 
 	// Click on the PR.AC-1 tree view item
@@ -155,8 +169,11 @@ test('compliance assessments scoring is working properly', async ({
 	await PRAC1TreeViewItem.content.click();
 
 	await page.waitForURL('/requirement-assessments/**');
-	await page.getByTestId('slide-toggle').click({ force: true });
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute('aria-valuenow', '25');
+	await page.getByTestId('form-input-is-scored').click();
+	if (!page.getByTestId('progress-ring-svg').isVisible()) {
+		await page.getByTestId('form-input-is-scored').click();
+	}
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute('data-value', '1');
 
 	const PRAC1SliderBoundingBox = await page.getByTestId('range-slider-input').boundingBox();
 	PRAC1SliderBoundingBox &&
@@ -166,38 +183,44 @@ test('compliance assessments scoring is working properly', async ({
 				y: PRAC1SliderBoundingBox.height / 2
 			}
 		}));
-	await expect(page.getByTestId('progress-radial')).toHaveAttribute(
-		'aria-valuenow',
-		PRAC1Score.progress
+	await expect(page.getByTestId('progress-ring-svg')).toHaveAttribute(
+		'data-value',
+		PRAC1Score.value.toString()
 	);
 
-	await complianceAssessmentsPage.form.saveButton.click();
+	await page.getByTestId('save-no-continue-button').click();
+	await complianceAssessmentsPage.isToastVisible('successfully saved', 'i');
+	await page.goBack();
 	await page.waitForURL(complianceAssessmentsPage.url + '/**');
 	await expect(PRAC1TreeViewItem.progressRadial).toHaveAttribute(
-		'aria-valuenow',
-		PRAC1Score.progress
+		'data-value',
+		toPercent(PRAC1Score.value)
 	);
 
 	// Assert that the computed compliance assessment score is correct
-	const IDAMScore = (parseFloat(IDAM1Score.progress) + parseFloat(IDAM2Score.progress)) / 2;
-	const IDScore = IDAMScore + (parseFloat(IDBE1Score.progress) - IDAMScore) / 3;
-	const globalScore = IDScore + (parseFloat(PRAC1Score.progress) - IDScore) / 4;
+	// Raw score calculations (as computed by backend)
+	const IDAMScoreRaw = (IDAM1Score.value + IDAM2Score.value) / 2;
+	const IDScoreRaw = IDAMScoreRaw + (IDBE1Score.value - IDAMScoreRaw) / 3;
+	const globalScoreRaw = IDScoreRaw + (PRAC1Score.value - IDScoreRaw) / 4;
 
+	// TreeViewItemContent uses Skeleton ProgressRing with percentage values
 	await expect(
 		(
 			await complianceAssessmentsPage.itemDetail.treeViewItem('ID.AM - Asset Management', [
 				'ID - Identify'
 			])
-		).content.getByTestId('progress-radial')
-	).toHaveAttribute('aria-valuenow', IDAMScore.toString());
+		).content.getByTestId('progress-ring-svg')
+	).toHaveAttribute('data-value', ((IDAMScoreRaw / maxScore) * 100).toString());
 	await expect(
 		(
 			await complianceAssessmentsPage.itemDetail.treeViewItem('ID - Identify', [])
-		).content.getByTestId('progress-radial')
-	).toHaveAttribute('aria-valuenow', IDScore.toString());
-	await expect(page.getByTestId('progress-radial').first()).toHaveAttribute(
+		).content.getByTestId('progress-ring-svg')
+	).toHaveAttribute('data-value', ((IDScoreRaw / maxScore) * 100).toString());
+
+	// Global RingProgress (next to donut) uses raw score
+	await expect(page.getByTestId('progress-ring-svg').first()).toHaveAttribute(
 		'aria-valuenow',
-		globalScore.toString()
+		globalScoreRaw.toString()
 	);
 });
 

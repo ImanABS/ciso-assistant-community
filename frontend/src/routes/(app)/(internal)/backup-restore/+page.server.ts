@@ -2,7 +2,7 @@ import { BASE_API_URL } from '$lib/utils/constants';
 import type { Actions } from '@sveltejs/kit';
 import { fail } from 'assert';
 import { setFlash } from 'sveltekit-flash-message/server';
-import * as m from '$paraglide/messages';
+import { m } from '$paraglide/messages';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async (event) => {
@@ -36,6 +36,9 @@ export const actions: Actions = {
 			console.error(data);
 			switch (data.error) {
 				case 'errorBackupInvalidVersion':
+					setFlash({ type: 'error', message: m.backupVersionError() }, event);
+					break;
+				case 'InvalidSchemaVersion':
 					setFlash({ type: 'error', message: m.backupVersionError() }, event);
 					break;
 				case 'GreaterBackupVersion':

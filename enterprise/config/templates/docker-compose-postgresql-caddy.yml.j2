@@ -32,8 +32,8 @@ services:
       - CISO_ASSISTANT_URL=https://{{ fqdn }}:{{ port }}
       - DJANGO_DEBUG={{ enable_debug }}
       - AUTH_TOKEN_TTL=7200
-      - LICENSE_SEATS=5
-      - LICENSE_EXPIRATION=2025-12-21
+      - LICENSE_SEATS={{ license_seats }}
+      - LICENSE_EXPIRATION={{ license_expiration }}
       - POSTGRES_NAME={{ postgres.name }}
       - POSTGRES_USER={{ postgres.user }}
       {% if postgres.password is defined %}
@@ -51,7 +51,7 @@ services:
     volumes:
       - ./db:/code/db
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://backend:8000/api/build || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://backend:8000/api/health/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -70,8 +70,8 @@ services:
       - CISO_ASSISTANT_URL=https://{{ fqdn }}:{{ port }}
       - DJANGO_DEBUG=False
       - AUTH_TOKEN_TTL=7200
-      - LICENSE_SEATS=5
-      - LICENSE_EXPIRATION=2025-12-21
+      - LICENSE_SEATS={{ license_seats }}
+      - LICENSE_EXPIRATION={{ license_expiration }}
       - POSTGRES_NAME={{ postgres.name }}
       - POSTGRES_USER={{ postgres.user }}
       {% if postgres.password is defined %}
@@ -109,7 +109,7 @@ services:
 
   caddy:
     container_name: caddy
-    image: caddy:2.8.4
+    image: caddy:2.11.2
     environment:
       - CISO_ASSISTANT_URL=https://{{ fqdn }}:{{ port }}
     depends_on:
@@ -123,9 +123,9 @@ services:
       - {{ cert_config.cert_path }}:/etc/caddy/cert.pem:ro
       - {{ cert_config.key_path }}:/etc/caddy/key.pem:ro{% endif %}
     command: |
-      sh -c 'echo $$CISO_ASSISTANT_URL "{
-      reverse_proxy /api/* backend:8000
-      reverse_proxy /* frontend:3000{% if not can_do_tls %}{% if use_custom_cert %}
-      tls /etc/caddy/cert.pem /etc/caddy/key.pem{% else %}
-      tls internal{% endif %}{% endif %}
+      sh -c 'echo "$$CISO_ASSISTANT_URL {
+        reverse_proxy /api/* backend:8000
+        reverse_proxy /* frontend:3000{% if not can_do_tls %}{% if use_custom_cert %}
+        tls /etc/caddy/cert.pem /etc/caddy/key.pem{% else %}
+        tls internal{% endif %}{% endif %}
       }" > Caddyfile && caddy run'

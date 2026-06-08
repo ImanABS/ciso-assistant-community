@@ -1,13 +1,22 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import * as m from '$paraglide/messages';
+	import { m } from '$paraglide/messages';
 	import { safeTranslate } from '$lib/utils/i18n';
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import CreateModal from '$lib/components/Modals/CreateModal.svelte';
+	import UpdateModal from '$lib/components/Modals/UpdateModal.svelte';
 	import ModelTable from '$lib/components/ModelTable/ModelTable.svelte';
-	import type { ModalComponent, ModalSettings, ModalStore } from '@skeletonlabs/skeleton';
-	import { TabGroup, Tab, getModalStore } from '@skeletonlabs/skeleton';
+	import { Tabs } from '@skeletonlabs/skeleton-svelte';
 	import Anchor from '$lib/components/Anchor/Anchor.svelte';
+	import { canPerformAction } from '$lib/utils/access-control';
+	import {
+		getModalStore,
+		type ModalComponent,
+		type ModalSettings,
+		type ModalStore
+	} from '$lib/components/Modals/stores';
+	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import { countMasked } from '$lib/utils/related-visibility';
 
 	const modalStore: ModalStore = getModalStore();
 
@@ -19,7 +28,11 @@
 		deprecated: 'bg-orange-300 text-orange-800'
 	};
 
-	export let data: PageData;
+	interface Props {
+		data: PageData;
+	}
+
+	let { data }: Props = $props();
 
 	const ebiosRmStudy = data.data;
 
@@ -41,9 +54,9 @@
 		modalStore.trigger(modal);
 	}
 
-	let activeActivity: string | null = null;
+	let activeActivity: string | null = $state(null);
 
-	$page.url.searchParams.forEach((value, key) => {
+	page.url.searchParams.forEach((value, key) => {
 		if (key === 'activity' && value === 'one') {
 			activeActivity = 'one';
 		} else if (key === 'activity' && value === 'two') {
@@ -51,19 +64,51 @@
 		}
 	});
 
-	let tabSet = 0;
+	function modalUpdateForm(): void {
+		let modalComponent: ModalComponent = {
+			ref: UpdateModal,
+			props: {
+				form: data.updateForm,
+				model: data.updatedModel,
+				object: data.object,
+				context: 'selectAsset'
+			}
+		};
+		let modal: ModalSettings = {
+			type: 'component',
+			component: modalComponent,
+			// Data
+			title: m.selectAsset()
+		};
+		modalStore.trigger(modal);
+	}
+
+	let group = $state(Object.keys(data.relatedModels)[0]);
+
+	const user = page.data.user;
+	const canEditObject: boolean = canPerformAction({
+		user,
+		action: 'change',
+		model: data.model.name,
+		domain:
+			data.model.name === 'folder'
+				? data.data.id
+				: (data.data.folder?.id ?? data.data.folder ?? user.root_folder_id)
+	});
 </script>
 
 <div class="card p-4 bg-white shadow-lg">
 	<div class="flex flex-col space-y-4">
 		<div class="flex flex-row justify-between items-center w-full">
-			<a
-				href="/ebios-rm/{ebiosRmStudy.id}"
+			<Anchor
+				breadcrumbAction="push"
+				href={`/ebios-rm/${data.data.id}`}
 				class="flex items-center space-x-2 text-primary-800 hover:text-primary-600"
 			>
-				<i class="fa-solid fa-arrow-left" />
-				<p class="">{m.goBackToEbiosRmStudy()}</p>
-			</a>
+				<i class="fa-solid fa-arrow-left"></i>
+				<p>{m.goBackToEbiosRmStudy()}</p>
+			</Anchor>
+
 			<div class="flex items-center space-x-2">
 				{#if ebiosRmStudy.ref_id}
 					<span class="badge bg-pink-200 text-pink-800 font-medium">
@@ -78,26 +123,38 @@
 					{safeTranslate(ebiosRmStudy.status)}
 				</span>
 			</div>
-			<Anchor
-				href={`${$page.url.pathname}/edit?activity=${activeActivity}&next=${$page.url.pathname}?activity=${activeActivity}`}
-				class="btn variant-filled-primary h-fit"
-			>
-				<i class="fa-solid fa-pen-to-square mr-2" data-testid="edit-button" />
-				{m.edit()}
-			</Anchor>
+			{#if canEditObject}
+				<Anchor
+					href={`${page.url.pathname}/edit?activity=${activeActivity}&next=${page.url.pathname}?activity=${activeActivity}`}
+					class="btn preset-filled-primary-500 h-fit"
+				>
+					<i class="fa-solid fa-pen-to-square mr-2" data-testid="edit-button"></i>
+					{m.edit()}
+				</Anchor>
+			{/if}
 		</div>
 		<div class="flex justify-center items-center w-full gap-5">
 			<span class="text-sm text-gray-500"
+				>{m.domainSemiColon()}
+				<Anchor class="anchor" href="/folders/{ebiosRmStudy.folder.id}"
+					>{ebiosRmStudy.folder.str}</Anchor
+				>
+			</span>
+			<span class="text-sm text-gray-500"
 				>{m.referenceEntitySemiColon()}
-				<a class="anchor" href="/entities/{ebiosRmStudy.reference_entity.id}"
-					>{ebiosRmStudy.reference_entity.str}</a
+				<Anchor class="anchor" href="/entities/{ebiosRmStudy.reference_entity.id}"
+					>{ebiosRmStudy.reference_entity.str}</Anchor
 				>
 			</span>
 			<span class="text-sm text-gray-500"
 				>{m.ebiosRmMatrixHelpText()}
-				<a class="anchor" href="/risk-matrices/{ebiosRmStudy.risk_matrix.id}"
-					>{ebiosRmStudy.risk_matrix.str}</a
+				<Anchor class="anchor" href="/risk-matrices/{ebiosRmStudy.risk_matrix.id}"
+					>{ebiosRmStudy.risk_matrix.str}</Anchor
 				>
+			</span>
+			<span class="text-sm text-gray-500"
+				>{m.quotationMethodSemiColon()}
+				<span class="font-bold">{safeTranslate(ebiosRmStudy.quotation_method)}</span>
 			</span>
 		</div>
 		<div
@@ -113,36 +170,52 @@
 					: 'text-gray-500'}">{m.activityOne()}</span
 			>
 			{#if ebiosRmStudy.description}
-				<p class="text-gray-600 whitespace-pre-wrap text-justify w-full">
-					{ebiosRmStudy.description}
-				</p>
+				<div class="text-gray-600 text-justify w-full">
+					<MarkdownRenderer content={ebiosRmStudy.description} />
+				</div>
 			{:else}
 				<p class="text-gray-600">{m.noDescription()}</p>
 			{/if}
-			<div class="w-full p-4 bg-gray-50 border rounded-md shadow-sm">
+			<div class="w-full p-4 bg-gray-50 border rounded-md shadow-xs">
 				<h3 class="font-semibold text-lg text-gray-700 flex items-center space-x-2">
 					<i class="fa-solid fa-user text-purple-500"></i>
 					<span>{m.authors()}</span>
 				</h3>
+				{#if ebiosRmStudy.authors && countMasked(ebiosRmStudy.authors) > 0}
+					<div class="alert text-yellow-700 mb-2">
+						<i class="fa-solid fa-triangle-exclamation"></i>
+						<span>{m.objectsNotVisible({ count: countMasked(ebiosRmStudy.authors) })}</span>
+					</div>
+				{/if}
 				<ul class="list-disc list-inside text-gray-600">
 					{#if ebiosRmStudy.authors?.length}
 						{#each ebiosRmStudy.authors as author}
-							<li><Anchor class="anchor" href="/users/{author.id}">{author.str}</Anchor></li>
+							{#if author.id && author.str}
+								<li><Anchor class="anchor" href="/users/{author.id}">{author.str}</Anchor></li>
+							{/if}
 						{/each}
 					{:else}
 						<li>{m.noAuthor()}</li>
 					{/if}
 				</ul>
 			</div>
-			<div class="w-full p-4 bg-gray-50 border rounded-md shadow-sm">
+			<div class="w-full p-4 bg-gray-50 border rounded-md shadow-xs">
 				<h3 class="font-semibold text-lg text-gray-700 flex items-center space-x-2">
 					<i class="fa-solid fa-users text-blue-500"></i>
 					<span>{m.reviewers()}</span>
 				</h3>
+				{#if ebiosRmStudy.reviewers && countMasked(ebiosRmStudy.reviewers) > 0}
+					<div class="alert text-yellow-700 mb-2">
+						<i class="fa-solid fa-triangle-exclamation"></i>
+						<span>{m.objectsNotVisible({ count: countMasked(ebiosRmStudy.reviewers) })}</span>
+					</div>
+				{/if}
 				<ul class="list-disc list-inside text-gray-600">
 					{#if ebiosRmStudy.reviewers?.length}
 						{#each ebiosRmStudy.reviewers as reviewer}
-							<li><Anchor class="anchor" href="/users/{reviewer.id}">{reviewer.str}</Anchor></li>
+							{#if reviewer.id && reviewer.str}
+								<li><Anchor class="anchor" href="/users/{reviewer.id}">{reviewer.str}</Anchor></li>
+							{/if}
 						{/each}
 					{:else}
 						<li>{m.noReviewer()}</li>
@@ -164,54 +237,82 @@
 			>
 			{#if Object.keys(data.relatedModels).length > 0}
 				<div class="card shadow-lg mt-8 bg-white w-full">
-					<TabGroup justify="justify-center">
-						{#each Object.entries(data.relatedModels) as [urlmodel, model], index}
-							<Tab bind:group={tabSet} value={index} name={`${urlmodel}_tab`}>
-								{safeTranslate(model.info.localNamePlural)}
-								{#if model.table.body.length > 0}
-									<span class="badge variant-soft-secondary">{model.table.body.length}</span>
-								{/if}
-							</Tab>
-						{/each}
-						<svelte:fragment slot="panel">
-							{#each Object.entries(data.relatedModels) as [urlmodel, model], index}
-								{#if tabSet === index}
-									<div class="flex flex-row justify-between px-4 py-2">
-										<h4 class="font-semibold lowercase capitalize-first my-auto">
-											{safeTranslate('associated-' + model.info.localNamePlural)}
-										</h4>
-									</div>
-									{#if model.table}
-										<ModelTable
-											source={model.table}
-											deleteForm={model.deleteForm}
-											URLModel={urlmodel}
-											baseEndpoint="/assets?ebios_rm_studies={$page.params.id}"
-										>
-											<button
-												slot="addButton"
-												class="btn variant-filled-primary self-end my-auto"
-												on:click={(_) => modalCreateForm(model)}
-												><i class="fa-solid fa-plus mr-2 lowercase" />{safeTranslate(
-													'add-' + model.info.localName
-												)}</button
-											>
-										</ModelTable>
+					<Tabs
+						value={group}
+						onValueChange={(e) => {
+							group = e.value;
+						}}
+					>
+						<Tabs.List>
+							{#each Object.entries(data.relatedModels) as [urlmodel, model]}
+								<Tabs.Trigger value={urlmodel} data-testid="tabs-control">
+									{safeTranslate(model.info.localNamePlural)}
+									{#if model.table.body.length > 0}
+										<span class="badge preset-tonal-secondary">{model.table.body.length}</span>
 									{/if}
-								{/if}
+								</Tabs.Trigger>
 							{/each}
-						</svelte:fragment>
-					</TabGroup>
+							<Tabs.Indicator />
+						</Tabs.List>
+						{#each Object.entries(data.relatedModels) as [urlmodel, model]}
+							<Tabs.Content value={urlmodel}>
+								<div class="py-2"></div>
+								{#if model.table}
+									<ModelTable
+										source={model.table}
+										deleteForm={model.deleteForm}
+										URLModel={urlmodel}
+										canSelectObject={canEditObject}
+										baseEndpoint="/assets?ebios_rm_studies={page.params.id}"
+										disableDelete={true}
+									>
+										{#snippet selectButton()}
+											<div>
+												<span
+													class="inline-flex overflow-hidden rounded-md border bg-white shadow-xs"
+												>
+													<button
+														class="inline-block p-3 btn-mini-secondary w-12 focus:relative"
+														data-testid="select-button"
+														title={m.selectAsset()}
+														onclick={(_) => modalUpdateForm()}
+														><i class="fa-solid fa-hand-pointer"></i>
+													</button>
+												</span>
+											</div>
+										{/snippet}
+										{#snippet addButton()}
+											<div>
+												<span
+													class="inline-flex overflow-hidden rounded-md border bg-white shadow-xs"
+												>
+													<button
+														class="inline-block border-e p-3 btn-mini-primary w-12 focus:relative"
+														data-testid="add-button"
+														title={safeTranslate('add-' + data.model.localName)}
+														onclick={(_) => modalCreateForm(model)}
+														><i class="fa-solid fa-file-circle-plus"></i>
+													</button>
+												</span>
+											</div>
+										{/snippet}
+									</ModelTable>
+								{/if}
+							</Tabs.Content>
+						{/each}
+					</Tabs>
 				</div>
 			{/if}
 		</div>
-		<div class="w-full p-4 bg-gray-50 border rounded-md shadow-sm">
+		<div class="w-full p-4 bg-gray-50 border rounded-md shadow-xs">
 			<h3 class="font-semibold text-lg text-gray-700 flex items-center space-x-2">
 				<i class="fa-solid fa-eye text-gray-500 opacity-75"></i>
 				<span>{m.observation()}</span>
 			</h3>
 			{#if ebiosRmStudy.observation}
-				<p class="text-gray-600">{ebiosRmStudy.observation}</p>
+				<div class="text-gray-600">
+					<MarkdownRenderer content={ebiosRmStudy.observation} />
+				</div>
 			{:else}
 				<p class="text-gray-600">{m.noObservation()}</p>
 			{/if}

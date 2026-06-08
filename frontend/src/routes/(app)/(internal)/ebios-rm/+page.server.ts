@@ -9,11 +9,11 @@ import { modelSchema } from '$lib/utils/schemas';
 import type { ModelInfo, urlModel } from '$lib/utils/types';
 import { type Actions } from '@sveltejs/kit';
 import { superValidate } from 'sveltekit-superforms';
-import { zod } from 'sveltekit-superforms/adapters';
+import { zod4 as zod } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
 import type { PageServerLoad } from './$types';
 import { listViewFields } from '$lib/utils/table';
-import { tableSourceMapper, type TableSource } from '@skeletonlabs/skeleton';
+import { type TableSource } from '@skeletonlabs/skeleton-svelte';
 
 export const load: PageServerLoad = async ({ params, fetch }) => {
 	const schema = z.object({ id: z.string().uuid() });
@@ -28,7 +28,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 
 	for (const selectField of selectFields) {
 		if (selectField.detail) continue;
-		const url = `${BASE_API_URL}/${URLModel}/${selectField.field}/`;
+		const url = `${BASE_API_URL}/${model.endpointUrl || URLModel}/${selectField.field}/`;
 		const response = await fetch(url);
 		if (response.ok) {
 			selectOptions[selectField.field] = await response.json().then((data) =>
@@ -44,7 +44,7 @@ export const load: PageServerLoad = async ({ params, fetch }) => {
 
 	model['selectOptions'] = selectOptions;
 
-	const endpoint = `${BASE_API_URL}/${model.endpointUrl}`;
+	const endpoint = `${BASE_API_URL}/${model.endpointUrl}/`;
 	const res = await fetch(endpoint);
 	const data = await res.json().then((res) => res.results);
 

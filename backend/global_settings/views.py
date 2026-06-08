@@ -1,14 +1,39 @@
 from rest_framework import permissions, viewsets
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from ciso_assistant.settings import CISO_ASSISTANT_URL
 from rest_framework.decorators import action
 
+from core.serializers import SerializerFactory
+from iam.models import Folder, Permission, RoleAssignment, User
 from iam.sso.models import SSOSettings
-
-from .serializers import GlobalSettingsSerializer, GeneralSettingsSerializer
-
+from integrations.models import IntegrationProvider
+from core.serializers import SerializerFactory
+from django.conf import settings
+from .serializers import (
+    GlobalSettingsSerializer,
+    GeneralSettingsSerializer,
+    FeatureFlagsSerializer,
+)
+from django.db import transaction
 from .models import GlobalSettings
+import structlog
+
+logger = structlog.get_logger(__name__)
+
+
+class GlobalSettingsSerializerFactory(SerializerFactory):
+    """Factory to get a serializer class from a list of modules.
+    Attributes:
+    modules (list): List of module names to search for the serializer.
+    """
+
+    def __init__(self, *modules: str):
+        # Reverse to prioritize later modules
+        self.modules = list(reversed(modules))
+
+    def get_serializer(self, base_name: str, action: str = "default"):
+        return self._get_serializer_class(f"{base_name}Serializer")
 
 
 class GlobalSettingsViewSet(viewsets.ModelViewSet):
@@ -34,6 +59,54 @@ class GlobalSettingsViewSet(viewsets.ModelViewSet):
         )
 
 
+class FeatureFlagsViewSet(viewsets.ModelViewSet):
+    model = GlobalSettings
+    serializer_class = FeatureFlagsSerializer
+    queryset = GlobalSettings.objects.filter(name="feature-flags")
+    serializers_module = "global_settings.serializers"
+
+    def get_permissions(self):
+        if self.request.method in ("GET", "HEAD", "OPTIONS"):
+            return [IsAuthenticated()]
+        return super().get_permissions()
+
+    def get_serializer_class(self, **kwargs):
+        serializer_factory = GlobalSettingsSerializerFactory(
+            self.serializers_module, settings.MODULE_PATHS.get("serializers", [])
+        )
+        serializer_class = serializer_factory.get_serializer(
+            "FeatureFlags", kwargs.get("action", "default")
+        )
+        logger.debug(
+            "Serializer class",
+            serializer_class=serializer_class,
+            action=kwargs.get("action", self.action),
+            viewset=self,
+            module_paths=settings.MODULE_PATHS,
+        )
+
+        return serializer_class
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer_class()(instance)
+        return Response(serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        serializer = self.get_serializer_class()(instance, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def get_object(self):
+        obj, _ = self.model.objects.get_or_create(name="feature-flags")
+        obj.is_published = True  # we could do that at creation, but it's ok here
+        obj.save(update_fields=["is_published"])
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+
 class GeneralSettingsViewSet(viewsets.ModelViewSet):
     model = GlobalSettings
     serializer_class = GeneralSettingsSerializer
@@ -54,6 +127,7 @@ class GeneralSettingsViewSet(viewsets.ModelViewSet):
     def get_object(self):
         obj = self.model.objects.get(name="general")
         obj.is_published = True  # we could do that at creation, but it's ok here
+        obj.save(update_fields=["is_published"])
         self.check_object_permissions(self.request, obj)
         return obj
 
@@ -67,6 +141,16 @@ class GeneralSettingsViewSet(viewsets.ModelViewSet):
             "ebios_radar_red_zone_radius": 2.5,
             "notifications_enable_mailing": False,
             "interface_agg_scenario_matrix": False,
+            "risk_matrix_swap_axes": False,
+            "risk_matrix_flip_vertical": False,
+            "risk_matrix_labels": "ISO",
+            "mapping_max_depth": 3,
+            "allow_self_validation": False,
+            "show_warning_external_links": True,
+            "builtin_metrics_retention_days": 730,  # 2 years default, minimum is 1
+            "allow_assignments_to_entities": False,
+            "enforce_mfa": False,
+            "default_language": "en",
         }
 
         settings, created = GlobalSettings.objects.get_or_create(name="general")
@@ -77,13 +161,61 @@ class GeneralSettingsViewSet(viewsets.ModelViewSet):
             settings.value = updated_value
             settings.save()
 
+        enabled_integrations = (
+            IntegrationProvider.objects.filter(is_active=True)
+            .distinct()
+            .values("id", "provider_type", "name", "configurations")
+        )
+        settings.value["enabled_integrations"] = list(enabled_integrations)
+
         return Response(GeneralSettingsSerializer(settings).data.get("value"))
+
+    @action(detail=True, name="Get available languages")
+    def default_language(self, request, pk=None):
+        choices = {code: name for code, name in settings.LANGUAGES}
+        return Response(choices)
+
+    @action(detail=True, methods=["post"], name="Force language for all users")
+    def force_language(self, request, pk=None):
+        perm = Permission.objects.get(codename="change_user")
+        if not RoleAssignment.is_access_allowed(
+            user=request.user,
+            perm=perm,
+            folder=Folder.get_root_folder(),
+        ):
+            return Response(
+                {"error": "You do not have permission to change user preferences."},
+                status=403,
+            )
+        general = GlobalSettings.objects.filter(name="general").first()
+        lang = (
+            general.value.get("default_language")
+            if general and isinstance(general.value, dict)
+            else None
+        )
+        if not lang or lang not in dict(settings.LANGUAGES):
+            return Response(
+                {"error": "No valid default language configured in general settings."},
+                status=400,
+            )
+        with transaction.atomic():
+            users = User.objects.select_for_update().all()
+            updated = 0
+            for user in users:
+                if not isinstance(user.preferences, dict):
+                    user.preferences = {}
+                user.preferences["lang"] = lang
+                user.save(update_fields=["preferences"])
+                updated += 1
+        return Response({"updated": updated, "language": lang})
 
     @action(detail=True, name="Get security objective scales")
     def security_objective_scale(self, request):
         choices = {
             "1-4": "1-4",
+            "1-5": "1-5",
             "0-3": "0-3",
+            "0-4": "0-4",
             "FIPS-199": "FIPS-199",
         }
         return Response(choices)
@@ -129,13 +261,30 @@ def get_sso_info(request):
     """
     API endpoint that returns the CSRF token.
     """
-    settings = SSOSettings.objects.get()
-    sp_entity_id = settings.settings["sp"].get("entity_id")
-    callback_url = CISO_ASSISTANT_URL + "/"
+    sso_settings = SSOSettings.objects.get()
+    sp_entity_id = sso_settings.settings["sp"].get("entity_id")
+    callback_url = settings.CISO_ASSISTANT_URL + "/"
     return Response(
         {
-            "is_enabled": settings.is_enabled,
+            "is_enabled": sso_settings.is_enabled,
             "sp_entity_id": sp_entity_id,
             "callback_url": callback_url,
         }
     )
+
+
+@api_view(["GET"])
+@permission_classes([permissions.AllowAny])
+def get_default_language(request):
+    """
+    Returns the configured default language. Falls back to English if unset or invalid.
+    """
+    general = GlobalSettings.objects.filter(name="general").first()
+    default_language = "en"
+    if general and isinstance(general.value, dict):
+        default_language = general.value.get("default_language", default_language)
+
+    if default_language not in dict(settings.LANGUAGES):
+        default_language = "en"
+
+    return Response({"default_language": default_language})

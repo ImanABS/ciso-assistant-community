@@ -4,17 +4,30 @@ import type { RiskScenarioSchema } from './schemas';
 
 export interface User {
 	id: string;
+	actor_id: string;
+	all_actor_ids: string[];
 	email: string;
 	first_name: string;
 	last_name: string;
 	is_active: boolean;
+	keep_local_login: boolean;
 	date_joined: string;
 	user_groups: Record<string, any>[];
 	roles: Record<string, any>[];
 	permissions: Record<string, any>[];
 	is_third_party: boolean;
+	is_auditee: boolean;
 	is_admin: boolean;
+	is_local: boolean;
+	is_sso: boolean;
+	is_superuser: boolean;
+	has_mfa_enabled: boolean;
 	accessible_domains: string[];
+	domain_permissions: Record<string, string[]>;
+	root_folder_id: string;
+	preferences: {
+		lang?: string;
+	};
 }
 
 export interface GlobalSettings {
@@ -37,14 +50,18 @@ export const URL_MODEL = [
 	'applied-controls',
 	'policies',
 	'risk-acceptances',
+	'validation-flows',
 	'reference-controls',
 	'assets',
+	'actors',
+	'teams',
 	'users',
 	'user-groups',
 	'roles',
 	'role-assignments',
 	'compliance-assessments',
 	'evidences',
+	'evidence-revisions',
 	'frameworks',
 	'requirements',
 	'requirement-assessments',
@@ -53,27 +70,88 @@ export const URL_MODEL = [
 	'libraries',
 	'sso-settings',
 	'general-settings',
+	'feature-flags',
 	'requirement-mapping-sets',
 	'entities',
 	'entity-assessments',
 	'solutions',
+	'contracts',
 	'representatives',
 	'vulnerabilities',
 	'filtering-labels',
+	'library-filtering-labels',
+	// 'ebios-rm',
 	'feared-events',
 	'ro-to',
 	'stakeholders',
 	'strategic-scenarios',
 	'attack-paths',
 	'operational-scenarios',
-	'qualifications',
-	// 'ebios-rm',
+	'elementary-actions',
+	'operating-modes',
+	'kill-chains',
+	'processings',
+	'processing-natures',
 	'security-exceptions',
 	'findings',
-	'findings-assessments'
+	'findings-assessments',
+	// privacy,
+	'processings',
+	'right-requests',
+	'data-breaches',
+	'purposes',
+	'personal-data',
+	'data-subjects',
+	'data-recipients',
+	'data-contractors',
+	'data-transfers',
+	// incidents,
+	'incidents',
+	'timeline-entries',
+	// tasks,
+	'task-templates',
+	'task-nodes',
+	// resilience,
+	'business-impact-analysis',
+	'escalation-thresholds',
+	'asset-assessments',
+	'asset-class',
+	'asset-capabilities',
+	// campaigns,
+	'campaigns',
+	// iso,
+	'organisation-issues',
+	'organisation-objectives',
+	// crq,
+	'quantitative-risk-studies',
+	'quantitative-risk-scenarios',
+	'quantitative-risk-hypotheses',
+	// terminologies
+	'terminologies',
+	// roles,
+	'roles',
+	'permissions',
+	// pmbok
+	'generic-collections',
+	'accreditations',
+	// metrology
+	'metric-definitions',
+	'metric-instances',
+	'custom-metric-samples',
+	'dashboards',
+	'dashboard-widgets',
+	'dashboard-text-widgets',
+	'dashboard-builtin-widgets',
+	// policy documents
+	'managed-documents',
+	'document-revisions'
 ] as const;
 
-export const THIRD_PARTY_URL_MODEL = ['compliance-assessments', 'evidences'] as const;
+export const THIRD_PARTY_URL_MODEL = [
+	'compliance-assessments',
+	'evidences',
+	'evidence-revisions'
+] as const;
 
 export type urlModel = (typeof URL_MODEL)[number];
 
@@ -158,6 +236,12 @@ export interface AggregatedData {
 }
 
 export interface AppliedControlStatus {
+	localLables: string[];
+	labels: any[];
+	values: any[]; // Set these types later on
+}
+
+export interface AppliedControlImpact {
 	localLables: string[];
 	labels: any[];
 	values: any[]; // Set these types later on

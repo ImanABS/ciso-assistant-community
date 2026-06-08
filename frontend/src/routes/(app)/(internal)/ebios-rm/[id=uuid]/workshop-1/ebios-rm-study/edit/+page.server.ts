@@ -2,7 +2,7 @@ import { BASE_API_URL } from '$lib/utils/constants';
 import { getModelInfo } from '$lib/utils/crud';
 import { modelSchema } from '$lib/utils/schemas';
 import { superValidate } from 'sveltekit-superforms';
-import { zod } from 'sveltekit-superforms/adapters';
+import { zod4 as zod } from 'sveltekit-superforms/adapters';
 import type { PageServerLoad, Actions } from '../$types';
 import { defaultWriteFormAction } from '$lib/utils/actions';
 
@@ -21,7 +21,7 @@ export const load: PageServerLoad = async (event) => {
 
 	if (selectFields) {
 		for (const selectField of selectFields) {
-			const url = `${BASE_API_URL}/${URLModel}/${
+			const url = `${BASE_API_URL}/${model.endpointUrl ? model.endpointUrl : URLModel}/${
 				selectField.detail ? event.params.id + '/' : ''
 			}${selectField.field}/`;
 			const response = await event.fetch(url);

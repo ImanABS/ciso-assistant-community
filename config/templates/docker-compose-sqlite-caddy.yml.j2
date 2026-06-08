@@ -20,11 +20,11 @@ services:
     volumes:
       - ./db:/code/db
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://backend:8000/api/build || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://backend:8000/api/health/ || exit 1"]
       interval: 10s
-      timeout: 5s
-      retries: 20
-      start_period: 100s
+      timeout: 10s
+      retries: 30
+      start_period: 150s
 
   huey:
     container_name: huey
@@ -70,7 +70,7 @@ services:
 
   caddy:
     container_name: caddy
-    image: caddy:2.8.4
+    image: caddy:2.11.2
     environment:
       - CISO_ASSISTANT_URL=https://{{ fqdn }}:{{ port }}
     depends_on:
@@ -78,15 +78,51 @@ services:
         condition: service_healthy
     restart: unless-stopped
     ports:
-      - {{ port }}:{{ port }}
+      - {{ port }}:{{ port }}{% if can_do_tls and port != 443 %}
+      - 443:443{% endif %}
     volumes:
       - ./caddy_data:/data{% if not can_do_tls and use_custom_cert %}
       - {{ cert_config.cert_path }}:/etc/caddy/cert.pem:ro
       - {{ cert_config.key_path }}:/etc/caddy/key.pem:ro{% endif %}
     command: |
-      sh -c 'echo $$CISO_ASSISTANT_URL "{
-      reverse_proxy /api/* backend:8000
-      reverse_proxy /* frontend:3000{% if not can_do_tls %}{% if use_custom_cert %}
-      tls /etc/caddy/cert.pem /etc/caddy/key.pem{% else %}
-      tls internal{% endif %}{% endif %}
+      sh -c 'echo "$$CISO_ASSISTANT_URL {
+        reverse_proxy /api/* backend:8000
+        reverse_proxy /* frontend:3000{% if not can_do_tls %}{% if use_custom_cert %}
+        tls /etc/caddy/cert.pem /etc/caddy/key.pem{% else %}
+        tls internal{% endif %}{% endif %}
       }" > Caddyfile && caddy run'
+
+  {% if kafka_dispatcher.enabled %}
+  dispatcher:
+    container_name: dispatcher
+    image: ghcr.io/intuitem/ciso-assistant-community/dispatcher:latest
+    # build:
+    #   context: ../dispatcher
+    restart: always
+    environment:
+      - API_URL=http://backend:8000/api
+      - BOOTSTRAP_SERVERS={{ kafka_dispatcher.broker_url }}
+      - KAFKA_USE_AUTH={{ kafka_dispatcher.kafka_use_auth }}
+      {% if kafka_dispatcher.kafka_use_auth %}
+      - KAFKA_SASL_MECHANISM={{ kafka_dispatcher.kafka_sasl_mechanism }}
+      - KAFKA_USERNAME={{ kafka_dispatcher.kafka_username }}
+      - KAFKA_PASSWORD={{ kafka_dispatcher.kafka_password }}
+      {% endif %}
+      - OBSERVATION_TOPIC={{ kafka_dispatcher.observation_topic }}
+      - ERRORS_TOPIC={{ kafka_dispatcher.errors_topic }}
+      {% if kafka_dispatcher.authentication == 'credentials' %}
+      - USER_EMAIL={{ kafka_dispatcher.credentials.user_email }}
+      - USER_PASSWORD={{ kafka_dispatcher.credentials.user_password }}
+      - AUTO_RENEW_SESSION={{ kafka_dispatcher.auto_renew_session }}
+      {% elif kafka_dispatcher.authentication == 'token' %}
+      - TOKEN={{ kafka_dispatcher.token }}
+      {% endif %}
+      {% if kafka_dispatcher.s3_url %}
+      - S3_URL={{ kafka_dispatcher.s3_url }}
+      - S3_ACCESS_KEY={{ kafka_dispatcher.s3_access_key }}
+      - S3_SECRET_KEY={{ kafka_dispatcher.s3_secret_key }}
+      {% endif %}
+    depends_on:
+      backend:
+        condition: service_healthy
+  {% endif %}

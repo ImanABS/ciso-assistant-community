@@ -8,7 +8,6 @@ from test_utils import EndpointTestsQueries
 # Generic asset data for tests
 ASSET_NAME = "Test Asset"
 ASSET_DESCRIPTION = "Test Description"
-ASSET_BUSINESS_VALUE = "test"
 ASSET_TYPE = ("PR", "Primary")
 ASSET_TYPE2 = ("SP", "Support")
 ASSET_PARENT_ASSETS = []
@@ -91,7 +90,6 @@ class TestAssetsAuthenticated:
             {
                 "name": ASSET_NAME,
                 "description": ASSET_DESCRIPTION,
-                "business_value": ASSET_BUSINESS_VALUE,
                 "type": ASSET_TYPE[0],
                 "folder": test.folder,
             },
@@ -112,7 +110,6 @@ class TestAssetsAuthenticated:
             {
                 "name": ASSET_NAME,
                 "description": ASSET_DESCRIPTION,
-                "business_value": ASSET_BUSINESS_VALUE,
                 "type": ASSET_TYPE[0],
                 "parent_assets": [],
                 "folder": str(test.folder.id),
@@ -142,7 +139,6 @@ class TestAssetsAuthenticated:
             {
                 "name": ASSET_NAME,
                 "description": ASSET_DESCRIPTION,
-                "business_value": ASSET_BUSINESS_VALUE,
                 "type": ASSET_TYPE2[0],
                 "parent_assets": [str(root_asset.id)],
                 "folder": str(test.folder.id),
@@ -153,6 +149,7 @@ class TestAssetsAuthenticated:
                 "parent_assets": [{"id": str(root_asset.id), "str": root_asset.name}],
             },
             base_count=1,
+            item_search_field="name",
             user_group=test.user_group,
             scope=str(test.folder),
         )
@@ -169,14 +166,12 @@ class TestAssetsAuthenticated:
             {
                 "name": ASSET_NAME,
                 "description": ASSET_DESCRIPTION,
-                "business_value": ASSET_BUSINESS_VALUE,
                 "type": ASSET_TYPE[0],
                 "folder": test.folder,
             },
             {
                 "name": "new " + ASSET_NAME,
                 "description": "new " + ASSET_DESCRIPTION,
-                "business_value": "new " + ASSET_BUSINESS_VALUE,
                 "type": ASSET_TYPE2[0],
                 "folder": str(folder.id),
             },

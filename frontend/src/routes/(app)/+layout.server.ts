@@ -1,8 +1,6 @@
 import type { LayoutServerLoad } from './$types';
 import { redirect } from '@sveltejs/kit';
 import { loadFlash } from 'sveltekit-flash-message/server';
-import { setLanguageTag } from '$paraglide/runtime';
-import { DEFAULT_LANGUAGE } from '$lib/utils/constants';
 
 const loginPageRegex = /^[a-zA-Z0-9]+:\/\/[^\/]+\/login\/?.*$/;
 
@@ -10,7 +8,21 @@ const loginPageRegex = /^[a-zA-Z0-9]+:\/\/[^\/]+\/login\/?.*$/;
 export const load = loadFlash(async ({ locals, url, cookies, request }) => {
 	if (!locals.user && !url.pathname.includes('/login')) {
 		redirect(302, `/login?next=${url.pathname}`);
-	} else {
+	}
+
+	if (
+		locals.user &&
+		locals.settings?.enforce_mfa &&
+		!locals.user.has_mfa_enabled &&
+		!locals.user.is_superuser &&
+		locals.user.is_local &&
+		!locals.user.is_sso &&
+		!url.pathname.startsWith('/setup-mfa')
+	) {
+		redirect(302, '/setup-mfa');
+	}
+
+	if (locals.user) {
 		const referer = request.headers.get('referer') ?? '';
 		const fromLogin = loginPageRegex.test(referer);
 		if (fromLogin) {
@@ -22,6 +34,5 @@ export const load = loadFlash(async ({ locals, url, cookies, request }) => {
 			});
 		}
 	}
-	setLanguageTag(cookies.get('ciso_lang') || DEFAULT_LANGUAGE);
-	return { user: locals.user, settings: locals.settings };
+	return { user: locals.user, settings: locals.settings, featureflags: locals.featureflags };
 }) satisfies LayoutServerLoad;

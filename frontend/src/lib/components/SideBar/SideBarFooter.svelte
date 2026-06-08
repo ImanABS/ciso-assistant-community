@@ -1,185 +1,159 @@
 <script lang="ts">
-	import { page } from '$app/stores';
-	import { popup } from '@skeletonlabs/skeleton';
-	import type { ModalSettings, PopupSettings } from '@skeletonlabs/skeleton';
-	import { getModalStore } from '@skeletonlabs/skeleton';
-	import { availableLanguageTags, languageTag, setLanguageTag } from '$paraglide/runtime';
-	import { LOCALE_MAP } from '$lib/utils/locales';
-	import * as m from '$paraglide/messages';
-	import { setCookie } from '$lib/utils/cookies';
-
+	import { page } from '$app/state';
+	import { LOCALE_MAP, language, defaultLangLabels } from '$lib/utils/locales';
+	import { m } from '$paraglide/messages';
+	import { getLocale, locales, setLocale } from '$paraglide/runtime';
+	import { getModalStore, type ModalSettings } from '$lib/components/Modals/stores';
 	import { createEventDispatcher, onMount } from 'svelte';
 	const dispatch = createEventDispatcher();
 
-	const language: any = {
-		french: m.french(),
-		english: m.english(),
-		arabic: m.arabic(),
-		portuguese: m.portuguese(),
-		spanish: m.spanish(),
-		german: m.german(),
-		dutch: m.dutch(),
-		italian: m.italian(),
-		polish: m.polish(),
-		romanian: m.romanian(),
-		hindi: m.hindi(),
-		urdu: m.urdu(),
-		czech: m.czech(),
-		swedish: m.swedish(),
-		indonesian: m.indonesian()
-	};
-
 	const modalStore = getModalStore();
 
-	const defaultLangLabels = {
-		fr: 'Français',
-		en: 'English',
-		ar: 'العربية',
-		pt: 'Português',
-		es: 'Español',
-		nl: 'Nederlands',
-		de: 'Deutsch',
-		it: 'Italiano',
-		pl: 'Polski',
-		ro: 'Română',
-		hi: 'हिंदी',
-		ur: 'اردو',
-		cs: 'Český',
-		sv: 'Svenska',
-		id: 'Bahasa Indonesia'
-	};
-
-	let value = languageTag();
+	let value = $state(getLocale());
 	async function handleLocaleChange(event: Event) {
-		event.preventDefault();
 		value = event?.target?.value;
-		setLanguageTag(value);
-		fetch('/fe-api/user-preferences', {
+		await fetch('/fe-api/user-preferences', {
 			method: 'PATCH',
 			body: JSON.stringify({
 				lang: value
 			})
-		});
-		// sessionStorage.setItem('lang', value);
-		setCookie('ciso_lang', value);
-		window.location.reload();
+		}).then(() => setLocale(value));
 	}
-
-	const popupUser: PopupSettings = {
-		event: 'click',
-		target: 'popupUser',
-		placement: 'top'
-	};
 
 	async function modalBuildInfo() {
 		const res = await fetch('/fe-api/build').then((res) => res.json());
 		const modal: ModalSettings = {
 			type: 'component',
 			component: 'displayJSONModal',
-			title: 'About CISO Assistant',
+			title: m.aboutCiso(),
 			body: JSON.stringify(res)
 		};
+		openState = false;
 		modalStore.trigger(modal);
 	}
 
-	let enableMoreBtn = false;
+	let enableMoreBtn = $state(false);
 
 	onMount(() => {
 		enableMoreBtn = true;
+	});
+
+	let openState = $state(false);
+	let triggerEl: HTMLButtonElement | undefined = $state();
+	let menuStyle = $derived.by(() => {
+		if (!openState || !triggerEl) return '';
+		const rect = triggerEl.getBoundingClientRect();
+		const centerX = rect.left + rect.width / 2;
+		return `position: fixed; bottom: ${window.innerHeight - rect.top + 8}px; left: ${centerX}px; transform: translateX(-50%);`;
 	});
 </script>
 
 <div class="border-t pt-2.5">
 	<div class="flex flex-row items-center justify-between">
 		<div class="flex flex-col w-3/4">
-			{#if $page.data.user}
+			{#if page.data.user}
 				<span
 					class="text-gray-900 text-sm whitespace-nowrap overflow-hidden truncate w-full"
 					data-testid="sidebar-user-name-display"
 				>
-					{$page.data.user.first_name}
-					{$page.data.user.last_name}
+					{page.data.user.first_name}
+					{page.data.user.last_name}
 				</span>
 				<span
 					class="font-normal text-xs whitespace-nowrap truncate text-gray-600 mr-2 w-full"
 					data-testid="sidebar-user-email-display"
 				>
-					{$page.data.user.email}
+					{page.data.user.email}
 				</span>
 			{/if}
 		</div>
-		{#key $modalStore}
-			{#if enableMoreBtn}
+		{#if enableMoreBtn}
+			<div class="relative">
 				<button
+					bind:this={triggerEl}
 					class="btn bg-initial"
 					data-testid="sidebar-more-btn"
+					aria-label="More options"
 					id="sidebar-more-btn"
-					use:popup={popupUser}><i class="fa-solid fa-ellipsis-vertical" /></button
+					onclick={() => (openState = !openState)}
 				>
-			{:else}
-				<button
-					class="btn bg-initial"
-					data-testid="sidebar-more-btn-disabled"
-					id="sidebar-more-btn-disabled"><i class="fa-solid fa-ellipsis-vertical" /></button
-				>
-			{/if}
-		{/key}
-		<div
-			class="card whitespace-nowrap bg-white py-2 w-fit shadow-lg space-y-1"
-			data-testid="sidebar-more-panel"
-			data-popup="popupUser"
-		>
-			<a
-				href="/my-profile"
-				on:click={(e) => {
-					window.location.href = e.target.href;
-				}}
-				class="unstyled cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
-				data-testid="profile-button"><i class="fa-solid fa-address-card mr-2" />{m.myProfile()}</a
-			>
-			<select
-				{value}
-				on:change={handleLocaleChange}
-				class="border-y-white border-x-gray-100 focus:border-y-white focus:border-x-gray-100 w-full cursor-pointer block text-sm text-gray-800 bg-white focus:ring-0"
-				data-testid="language-select"
-			>
-				{#each availableLanguageTags as lang}
-					<option value={lang} selected={lang === languageTag()}>
-						{defaultLangLabels[lang]} ({language[LOCALE_MAP[lang].name]})
-					</option>
-				{/each}
-			</select>
-			<button
-				on:click={() => dispatch('triggerGT')}
-				class="cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
-				data-testid="gt-button"
-				><i class="fa-solid fa-wand-magic-sparkles mr-2" />{m.guidedTour()}</button
-			>
-			<button
-				on:click={() => dispatch('loadDemoDomain')}
-				class="cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
-				data-testid="load-demo-data-button"
-				><i class="fa-solid fa-file-import mr-2" />{m.loadDemoData()}</button
-			>
-			<button
-				on:click={modalBuildInfo}
-				class="cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
-				data-testid="about-button"><i class="fa-solid fa-circle-info mr-2" />{m.aboutCiso()}</button
-			>
-			<a
-				href="https://intuitem.gitbook.io/ciso-assistant"
-				target="_blank"
-				class="unstyled cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
-				data-testid="docs-button"><i class="fa-solid fa-book mr-2" />{m.onlineDocs()}</a
-			>
-			<form action="/logout" method="POST">
-				<button class="w-full" type="submit" data-testid="logout-button">
-					<span
-						class="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
-						><i class="fa-solid fa-right-from-bracket mr-2" />{m.Logout()}</span
-					>
+					<i class="fa-solid fa-ellipsis-vertical"></i>
 				</button>
-			</form>
-		</div>
+				{#if openState}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div
+						class="fixed inset-0 z-[999]"
+						onclick={() => (openState = false)}
+						onkeydown={(e) => e.key === 'Escape' && (openState = false)}
+					></div>
+					<div
+						style={menuStyle}
+						class="z-[1000] card whitespace-nowrap bg-white py-2 w-fit shadow-lg space-y-1 rounded-lg"
+						data-testid="sidebar-more-panel"
+					>
+						<a
+							href="/my-profile"
+							onclick={() => {
+								openState = false;
+							}}
+							class="unstyled cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
+							data-testid="profile-button"
+							><i class="fa-solid fa-address-card mr-2"></i>{m.myProfile()}</a
+						>
+						<select
+							{value}
+							onchange={handleLocaleChange}
+							class="border-y-white border-x-gray-100 focus:border-y-white focus:border-x-gray-100 w-full px-4 py-2.5 cursor-pointer block text-sm text-gray-800 bg-white focus:ring-0"
+							data-testid="language-select"
+						>
+							{#each locales as lang}
+								<option value={lang} selected={lang === getLocale()}>
+									{defaultLangLabels[lang]} ({language[LOCALE_MAP[lang].name]})
+								</option>
+							{/each}
+						</select>
+						<button
+							onclick={() => {
+								openState = false;
+								dispatch('getStarted');
+							}}
+							class="cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
+							data-testid="get-started-button"
+							><i class="fa-solid fa-rocket mr-2"></i>{m.getStarted()}</button
+						>
+						<button
+							onclick={() => {
+								openState = false;
+								modalBuildInfo();
+							}}
+							class="cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
+							data-testid="about-button"
+							><i class="fa-solid fa-circle-info mr-2"></i>{m.aboutCiso()}</button
+						>
+						<a
+							href="https://intuitem.gitbook.io/ciso-assistant"
+							target="_blank"
+							class="unstyled cursor-pointer flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
+							data-testid="docs-button"><i class="fa-solid fa-book mr-2"></i>{m.onlineDocs()}</a
+						>
+						<form action="/logout" method="POST">
+							<button class="w-full" type="submit" data-testid="logout-button">
+								<span
+									class="flex items-center gap-2 w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 disabled:text-gray-500 text-gray-800"
+									><i class="fa-solid fa-right-from-bracket mr-2"></i>{m.Logout()}</span
+								>
+							</button>
+						</form>
+					</div>
+				{/if}
+			</div>
+		{:else}
+			<button
+				class="btn bg-initial"
+				data-testid="sidebar-more-btn-disabled"
+				aria-label="More options"
+				id="sidebar-more-btn-disabled"><i class="fa-solid fa-ellipsis-vertical"></i></button
+			>
+		{/if}
 	</div>
 </div>

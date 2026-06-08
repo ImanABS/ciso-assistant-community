@@ -1,16 +1,16 @@
 <script lang="ts">
+	import { tableSourceMapper } from '$lib/utils/table';
 	import Dropdown from '$lib/components/Dropdown/Dropdown.svelte';
 	import ModelTable from '$lib/components/ModelTable/ModelTable.svelte';
 	import type { TableSource } from '$lib/components/ModelTable/types';
 	import RiskMatrix from '$lib/components/RiskMatrix/RiskMatrix.svelte';
 	import RecursiveTreeView from '$lib/components/TreeView/RecursiveTreeView.svelte';
 	import { formatDateOrDateTime } from '$lib/utils/datetime';
-	import * as m from '$paraglide/messages';
-	import { languageTag } from '$paraglide/runtime';
-	import { tableSourceMapper } from '@skeletonlabs/skeleton';
-	import TreeViewItemContent from '../../frameworks/[id=uuid]/TreeViewItemContent.svelte';
+	import { m } from '$paraglide/messages';
+	import { getLocale } from '$paraglide/runtime';
+	import TreeViewItemContent from './TreeViewItemContent.svelte';
 
-	export let data;
+	let { data } = $props();
 
 	const showRisks = true;
 
@@ -77,7 +77,7 @@
 	}
 </script>
 
-<div class="card bg-white p-4 shadow space-y-4">
+<div class="card bg-white p-4 shadow-sm space-y-4">
 	<div class="flex flex-col space-y-2">
 		<span class="w-full flex flex-row justify-between">
 			<h1 class="font-medium text-xl">{data.library.name}</h1>
@@ -99,7 +99,7 @@
 				<p class="text-md leading-5 text-gray-700">
 					<strong>{m.publicationDate()}</strong>: {formatDateOrDateTime(
 						data.library.publication_date,
-						languageTag()
+						getLocale()
 					)}
 				</p>
 			{/if}
@@ -138,7 +138,7 @@
 				interactive={false}
 			/>
 			{#each riskMatricesPreview(riskMatrices) as riskMatrix}
-				<RiskMatrix {riskMatrix} {showRisks} wrapperClass="mt-8" />
+				<RiskMatrix {riskMatrix} showLegend={showRisks} wrapperClass="mt-8" />
 			{/each}
 		</Dropdown>
 	{/if}

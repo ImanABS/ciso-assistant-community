@@ -1,7 +1,8 @@
+import os
 from django import template
 from django.utils.safestring import mark_safe
 
-from ciso_assistant.settings import VERSION, BUILD, DEBUG
+from django.conf import settings
 from core.utils import COUNTRY_FLAGS, LANGUAGES
 from core.models import RequirementAssessment
 from core.helpers import color_css_class
@@ -11,12 +12,12 @@ register = template.Library()
 
 @register.simple_tag()
 def app_version():
-    return VERSION
+    return settings.VERSION
 
 
 @register.simple_tag()
 def app_build():
-    return f"{BUILD} (dev)" if DEBUG else BUILD
+    return f"{settings.BUILD} (dev)" if settings.DEBUG else settings.BUILD
 
 
 @register.simple_tag()
@@ -58,6 +59,42 @@ def country_name(country_code):
 @register.filter(name="isinstance")
 def isinstance_filter(val, instance_type):
     return isinstance(val, eval(instance_type))
+
+
+@register.filter(name="is_list")
+def is_list(val):
+    return isinstance(val, list)
+
+
+@register.filter(name="is_string")
+def is_string(val):
+    return isinstance(val, str)
+
+
+@register.filter(name="get_answers")
+def get_answers(question, answers):
+    if not answers:
+        return None
+    if isinstance(answers, list):
+        return [get_answers(question, answer) for answer in answers]
+    elif not answers.startswith("urn:"):
+        return answers
+    for choice in question.get("choices", []):
+        if choice["urn"] == answers:
+            return choice["value"]
+
+
+@register.filter(name="get_item")
+def get_item(dictionary, key):
+    return dictionary.get(key)
+
+
+@register.filter(name="basename")
+def basename_filter(file_path):
+    """Extract the basename from a file path."""
+    if not file_path:
+        return ""
+    return os.path.basename(str(file_path))
 
 
 @register.simple_tag

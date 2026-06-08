@@ -1,0 +1,103 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+@import '@skeletonlabs/skeleton';
+
+/*
+  Add your theme import for your theme: "ciso-theme" here
+*/
+@import '../ciso-theme.css';
+@import '@skeletonlabs/skeleton-svelte';
+
+@source './**/*.{html,js,svelte,ts}';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+	*,
+	::after,
+	::before,
+	::backdrop,
+	::file-selector-button {
+		border-color: var(--color-gray-200, currentcolor);
+	}
+}
+
+@utility btn-mini-primary {
+	@apply text-gray-50 bg-violet-600 hover:bg-violet-500;
+}
+@utility btn-mini-secondary {
+	@apply text-gray-50 bg-pink-500 hover:bg-pink-400;
+}
+@utility btn-mini-tertiary {
+	@apply text-gray-50 bg-sky-500 hover:bg-sky-400;
+}
+@utility btn-mini-quaternary {
+	@apply text-gray-50 bg-teal-500 hover:bg-teal-400;
+}
+
+@layer utilities {
+	/* (all other styles here...) */
+	html,
+	body {
+		@apply h-auto;
+	}
+	.capitalize-first:first-letter {
+		@apply capitalize;
+	}
+	tbody {
+		& > :not(:last-child) {
+			border-color: var(--color-surface-100-900) !important;
+		}
+	}
+	.input,
+	.select,
+	.multiselect,
+	.textarea {
+		background-color: var(--color-surface-100);
+	}
+
+	.checkbox,
+	.radio {
+		background-color: var(--color-surface-100);
+	}
+}
+
+@layer base {
+	[data-popup] {
+		transition: none;
+	}
+}
+
+/* AutocompleteSelect: collapse overflow chips when chip-max-N class is on outerDiv.
+   Uses position/size instead of display:none to avoid Tailwind v4 @layer !important cascade. */
+.chip-max-1 ul.selected > li:nth-child(n + 3),
+.chip-max-2 ul.selected > li:nth-child(n + 4),
+.chip-max-3 ul.selected > li:nth-child(n + 5),
+.chip-max-4 ul.selected > li:nth-child(n + 6),
+.chip-max-5 ul.selected > li:nth-child(n + 7) {
+	position: absolute !important;
+	width: 0 !important;
+	height: 0 !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	overflow: hidden !important;
+	opacity: 0 !important;
+	pointer-events: none !important;
+}
+
+.hide-scrollbar {
+	scrollbar-width: none;
+	-ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+	display: none;
+}

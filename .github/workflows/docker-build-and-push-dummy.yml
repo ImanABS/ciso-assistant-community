@@ -1,9 +1,15 @@
 name: Build and Push Docker Images Dummy
+permissions:
+  contents: read
+  packages: write
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
+
+# Cancel older in-progress runs for the same PR or the same ref (branch)
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   UBUNTU_VERSION: "ubuntu-24.04"
   VERSION: dummy
@@ -11,9 +17,6 @@ env:
 jobs:
   build-and-push:
     runs-on: ubuntu-24.04-arm
-    permissions:
-      contents: read
-      packages: write
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -35,6 +38,34 @@ jobs:
           cp .meta ./backend/
           cp .meta ./backend/ciso_assistant/
 
+      - name: Extract backend metadata
+        id: meta-backend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/backend
+          tags: |
+            type=raw,value=${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.title=CISO Assistant Backend
+            org.opencontainers.image.description=An open-source GRC platform for cybersecurity compliance and risk management
+            org.opencontainers.image.vendor=intuitem
+            org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.url=https://intuitem.com
+            org.opencontainers.image.documentation=https://intuitem.gitbook.io/ciso-assistant
+      - name: Extract frontend metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}/frontend
+          tags: |
+            type=raw,value=${{ env.VERSION }}
+          labels: |
+            org.opencontainers.image.title=CISO Assistant Frontend
+            org.opencontainers.image.description=An open-source GRC platform for cybersecurity compliance and risk management
+            org.opencontainers.image.vendor=intuitem
+            org.opencontainers.image.licenses=AGPL-3.0
+            org.opencontainers.image.url=https://intuitem.com
+            org.opencontainers.image.documentation=https://intuitem.gitbook.io/ciso-assistant
       - name: Build Backend ARM Docker Image
         uses: docker/build-push-action@v6
         with:
@@ -43,6 +74,7 @@ jobs:
           load: true
           platforms: linux/arm64
           tags: ghcr.io/${{ github.repository }}/backend:arm64-${{ env.VERSION }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
       - name: Build Frontend ARM Docker Image
         uses: docker/build-push-action@v6
         with:
@@ -51,6 +83,7 @@ jobs:
           load: true
           platforms: linux/arm64
           tags: ghcr.io/${{ github.repository }}/frontend:arm64-${{ env.VERSION }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
       - name: Build Backend Docker Image
         uses: docker/build-push-action@v6
         with:
@@ -59,6 +92,7 @@ jobs:
           load: true
           platforms: linux/amd64
           tags: ghcr.io/${{ github.repository }}/backend:${{ env.VERSION }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
       - name: Build Frontend Docker Image
         uses: docker/build-push-action@v6
         with:
@@ -67,3 +101,4 @@ jobs:
           load: true
           platforms: linux/amd64
           tags: ghcr.io/${{ github.repository }}/frontend:${{ env.VERSION }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}

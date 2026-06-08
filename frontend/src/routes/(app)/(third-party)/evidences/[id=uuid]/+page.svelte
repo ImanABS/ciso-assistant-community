@@ -1,19 +1,24 @@
 <script lang="ts">
 	import ConfirmModal from '$lib/components/Modals/ConfirmModal.svelte';
 	import { getModelInfo } from '$lib/utils/crud.js';
-	import type { ModalComponent, ModalSettings, ModalStore } from '@skeletonlabs/skeleton';
-	import { getModalStore } from '@skeletonlabs/skeleton';
+	import type { ModalComponent, ModalSettings, ModalStore } from '@skeletonlabs/skeleton-svelte';
 	import { onMount } from 'svelte';
 	import type { PageData } from './$types';
-
+	import { page } from '$app/state';
 	import Anchor from '$lib/components/Anchor/Anchor.svelte';
 	import DetailView from '$lib/components/DetailView/DetailView.svelte';
-	import * as m from '$paraglide/messages';
+	import { m } from '$paraglide/messages';
 	import { defaults } from 'sveltekit-superforms';
 	import { z } from 'zod';
-	import { zod } from 'sveltekit-superforms/adapters';
+	import { zod4 as zod } from 'sveltekit-superforms/adapters';
+	import { canPerformAction } from '$lib/utils/access-control';
+	import { getModalStore } from '$lib/components/Modals/stores';
 
-	export let data: PageData;
+	interface Props {
+		data: PageData;
+	}
+
+	let { data }: Props = $props();
 
 	interface Attachment {
 		type: string;
@@ -21,7 +26,7 @@
 		fileExists: boolean;
 	}
 
-	let attachment: Attachment | undefined = undefined;
+	let attachment: Attachment | undefined = $state(undefined);
 	const modalStore: ModalStore = getModalStore();
 
 	function modalConfirm(id: string, name: string, action: string): void {
@@ -32,6 +37,7 @@
 					{ id, urlmodel: 'evidences' },
 					zod(z.object({ id: z.string(), urlmodel: z.string() }))
 				),
+				schema: zod(z.object({ id: z.string(), urlmodel: z.string() })),
 				id: id,
 				debug: false,
 				URLModel: getModelInfo('evidences').urlModel,
@@ -60,6 +66,8 @@
 		};
 		attachment = data.data.attachment ? await fetchAttachment() : undefined;
 	});
+
+	const user = page.data.user;
 </script>
 
 <DetailView {data} />
@@ -73,16 +81,9 @@
 			<div class="space-x-2">
 				<Anchor
 					href={`./${data.data.id}/attachment`}
-					class="btn variant-filled-primary h-fit"
+					class="btn preset-filled-primary-500 h-fit"
 					data-testid="attachment-download-button"
-					><i class="fa-solid fa-download mr-2" /> {m.download()}</Anchor
-				>
-				<button
-					on:click={(_) => {
-						modalConfirm(data.data.id, data.data.attachment, '?/deleteAttachment');
-					}}
-					on:keydown={(_) => modalConfirm(data.data.id, data.data.attachment, '?/deleteAttachment')}
-					class="btn variant-filled-tertiary h-full"><i class="fa-solid fa-trash" /></button
+					><i class="fa-solid fa-download mr-2"></i> {m.download()}</Anchor
 				>
 			</div>
 		</div>

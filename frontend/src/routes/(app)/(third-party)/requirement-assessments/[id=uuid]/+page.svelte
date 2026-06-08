@@ -1,5 +1,6 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import ModelTable from '$lib/components/ModelTable/ModelTable.svelte';
 	import { complianceResultColorMap, complianceStatusColorMap } from '$lib/utils/constants';
 	import {
@@ -11,11 +12,18 @@
 	import { safeTranslate } from '$lib/utils/i18n';
 	import { toCamelCase } from '$lib/utils/locales';
 	import { hideSuggestions } from '$lib/utils/stores';
-	import * as m from '$paraglide/messages';
-	import { ProgressRadial, Tab, TabGroup } from '@skeletonlabs/skeleton';
+	import { m } from '$paraglide/messages';
+	import { Progress, Tabs } from '@skeletonlabs/skeleton-svelte';
 	import type { PageData } from '../[id=uuid]/$types';
+	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
+	import CommentsPanel from '$lib/components/CommentsPanel/CommentsPanel.svelte';
+	import { countMasked } from '$lib/utils/related-visibility';
 
-	export let data: PageData;
+	interface Props {
+		data: PageData;
+	}
+
+	let { data }: Props = $props();
 	const threats = data.requirementAssessment.requirement.associated_threats ?? [];
 	const reference_controls =
 		data.requirementAssessment.requirement.associated_reference_controls ?? [];
@@ -25,12 +33,12 @@
 	const has_threats = threats.length > 0;
 	const has_reference_controls = reference_controls.length > 0;
 
-	$: mappingInference = {
-		sourceRequirementAssessment:
-			data.requirementAssessment.mapping_inference.source_requirement_assessment,
+	let mappingInference = $derived({
+		sourceRequirementAssessments:
+			data.requirementAssessment.mapping_inference.source_requirement_assessments,
 		result: data.requirementAssessment.mapping_inference.result,
 		annotation: ''
-	};
+	});
 
 	const title = getRequirementTitle(data.requirement.ref_id, data.requirement.name)
 		? getRequirementTitle(data.requirement.ref_id, data.requirement.name)
@@ -38,9 +46,9 @@
 
 	let requirementAssessmentsList: string[] = $hideSuggestions;
 
-	let hideSuggestion = requirementAssessmentsList.includes(data.requirementAssessment.id)
-		? true
-		: false;
+	let hideSuggestion = $state(
+		requirementAssessmentsList.includes(data.requirementAssessment.id) ? true : false
+	);
 
 	function toggleSuggestions() {
 		if (!requirementAssessmentsList.includes(data.requirementAssessment.id)) {
@@ -55,23 +63,24 @@
 	}
 
 	function cancel(): void {
-		var currentUrl = window.location.href;
-		var url = new URL(currentUrl);
-		var nextValue = getSecureRedirect(url.searchParams.get('next'));
-		if (nextValue) window.location.href = nextValue;
+		const AuditURL = `/compliance-assessments/${data.requirementAssessment.compliance_assessment.id}`;
+		goto(AuditURL);
 	}
 
-	$: classesText =
-		complianceResultColorMap[mappingInference.result] === '#000000' ? 'text-white' : '';
+	let classesText = $derived(
+		complianceResultColorMap[mappingInference.result] === '#000000' ? 'text-white' : ''
+	);
 
 	const max_score = data.complianceAssessmentScore.max_score;
 	const score = data.requirementAssessment.score;
 	const documentationScore = data.requirementAssessment.documentation_score;
 
-	let tabSet = $page.data.user.is_third_party ? 1 : 0;
+	let expandedInferences = $state(false);
+
+	let group = $state(page.data.user.is_third_party ? 'evidence' : 'applied_controls');
 </script>
 
-<div class="card space-y-2 p-4 bg-white shadow">
+<div class="card space-y-2 p-4 bg-white shadow-sm">
 	<div class="flex flex-row space-x-2 items-center">
 		<code class="code">{data.requirement.urn}</code>
 		<span
@@ -88,43 +97,64 @@
 		>
 			{safeTranslate(data.requirementAssessment.result)}
 		</span>
+		{#if data.requirement.implementation_groups && data.requirement.implementation_groups.length > 0}
+			<div class="ml-3">
+				<b class="mr-2">{m.implementationGroups()} :</b>
+				{#each data.requirement.implementation_groups as ig}
+					<span class="badge bg-blue-100 mr-2">
+						{ig}
+					</span>
+				{/each}
+			</div>
+		{/if}
 		{#if data.requirementAssessment.is_scored}
-			<ProgressRadial
-				stroke={100}
-				meter={displayScoreColor(score, max_score)}
-				value={formatScoreValue(score, max_score)}
-				font={150}
-				class="shrink-0"
-				width={'w-10'}>{score}</ProgressRadial
-			>
+			<div class="shrink-0 relative">
+				<Progress value={formatScoreValue(score, max_score)} min={0} max={100}>
+					<Progress.Circle class="[--size:--spacing(10)]">
+						<Progress.CircleTrack />
+						<Progress.CircleRange class={displayScoreColor(score, max_score)} />
+					</Progress.Circle>
+					<div class="absolute inset-0 flex items-center justify-center">
+						<span class="text-xs font-bold">{score}</span>
+					</div>
+				</Progress>
+			</div>
 			{#if data.complianceAssessmentScore.show_documentation_score}
-				<ProgressRadial
-					stroke={100}
-					meter={displayScoreColor(documentationScore, max_score)}
-					value={formatScoreValue(documentationScore, max_score)}
-					font={150}
-					class="shrink-0"
-					width={'w-10'}>{documentationScore}</ProgressRadial
-				>
+				<div class="shrink-0 relative">
+					<Progress value={formatScoreValue(documentationScore, max_score)} min={0} max={100}>
+						<Progress.Circle class="[--size:--spacing(10)]">
+							<Progress.CircleTrack />
+							<Progress.CircleRange class={displayScoreColor(documentationScore, max_score)} />
+						</Progress.Circle>
+						<div class="absolute inset-0 flex items-center justify-center">
+							<span class="text-xs font-bold">{documentationScore}</span>
+						</div>
+					</Progress>
+				</div>
 			{/if}
 		{/if}
 	</div>
 	{#if data.requirement.description}
-		<p class="whitespace-pre-line p-2 font-light text-lg">
-			👉 {data.requirement.description}
-		</p>
+		<div class="font-light text-lg card p-4 preset-tonal-primary">
+			<h2 class="font-semibold text-base flex flex-row justify-between">
+				<div>
+					<i class="fa-solid fa-file-lines mr-2"></i>{m.description()}
+				</div>
+			</h2>
+			<MarkdownRenderer content={data.requirement.description} />
+		</div>
 	{/if}
 	{#if has_threats || has_reference_controls || annotation || mappingInference.result}
-		<div class="card p-4 variant-glass-primary text-sm flex flex-col justify-evenly cursor-auto">
-			<h2 class="font-semibold text-lg flex flex-row justify-between">
+		<div class="card p-4 preset-tonal-secondary text-sm flex flex-col justify-evenly cursor-auto">
+			<h2 class="font-semibold text-base flex flex-row justify-between">
 				<div>
-					<i class="fa-solid fa-circle-info mr-2" />{m.additionalInformation()}
+					<i class="fa-solid fa-circle-info mr-2"></i>{m.additionalInformation()}
 				</div>
-				<button on:click={toggleSuggestions}>
+				<button onclick={toggleSuggestions}>
 					{#if !hideSuggestion}
-						<i class="fa-solid fa-eye" />
+						<i class="fa-solid fa-eye"></i>
 					{:else}
-						<i class="fa-solid fa-eye-slash" />
+						<i class="fa-solid fa-eye-slash"></i>
 					{/if}
 				</button>
 			</h2>
@@ -134,7 +164,7 @@
 						<div class="flex-1">
 							{#if reference_controls.length > 0}
 								<p class="font-medium">
-									<i class="fa-solid fa-gears" />
+									<i class="fa-solid fa-gears"></i>
 									{m.suggestedReferenceControls()}
 								</p>
 								<ul class="list-disc ml-4">
@@ -155,7 +185,7 @@
 						<div class="flex-1">
 							{#if threats.length > 0}
 								<p class="font-medium">
-									<i class="fa-solid fa-gears" />
+									<i class="fa-solid fa-gears"></i>
 									{m.threatsCovered()}
 								</p>
 								<ul class="list-disc ml-4">
@@ -178,142 +208,186 @@
 				{#if annotation}
 					<div class="my-2">
 						<p class="font-medium">
-							<i class="fa-solid fa-pencil" />
+							<i class="fa-solid fa-pencil"></i>
 							{m.annotation()}
 						</p>
-						<p class="whitespace-pre-line py-1">
-							{annotation}
-						</p>
+						<div class="py-1">
+							<MarkdownRenderer content={annotation} />
+						</div>
 					</div>
 				{/if}
 				{#if typical_evidence}
 					<div class="my-2">
 						<p class="font-medium">
-							<i class="fa-solid fa-pencil" />
+							<i class="fa-solid fa-pencil"></i>
 							{m.typicalEvidence()}
 						</p>
-						<p class="whitespace-pre-line py-1">
-							{typical_evidence}
-						</p>
+						<div class="py-1">
+							<MarkdownRenderer content={typical_evidence} />
+						</div>
 					</div>
 				{/if}
 				{#if mappingInference.result}
 					<div class="my-2">
 						<p class="font-medium">
-							<i class="fa-solid fa-link" />
+							<i class="fa-solid fa-link"></i>
 							{m.mappingInference()}
 						</p>
 						<span class="text-xs text-gray-500"
 							><i class="fa-solid fa-circle-info"></i> {m.mappingInferenceHelpText()}</span
 						>
-						<ul class="list-disc ml-4">
-							<li>
-								<p>
-									<a
-										class="anchor"
-										href="/requirement-assessments/{mappingInference.sourceRequirementAssessment
-											.id}"
-									>
-										{mappingInference.sourceRequirementAssessment.str}
-									</a>
-								</p>
-								<p class="whitespace-pre-line py-1">
-									<span class="italic">{m.coverageColon()}</span>
-									<span class="badge h-fit">
-										{safeTranslate(
-											toCamelCase(mappingInference.sourceRequirementAssessment.coverage)
-										)}
-									</span>
-								</p>
-								<p class="whitespace-pre-line py-1">
-									<span class="italic">{m.suggestionColon()}</span>
-									<span
-										class="badge {classesText} h-fit"
-										style="background-color: {complianceResultColorMap[mappingInference.result]};"
-									>
-										{safeTranslate(mappingInference.result)}
-									</span>
-								</p>
-								{#if mappingInference.annotation}
-									<p class="whitespace-pre-line py-1">
-										<span class="italic">{m.annotationColon()}</span>
-										{mappingInference.annotation}
-									</p>
-								{/if}
-							</li>
-						</ul>
+						<div>
+							<ul class="list-disc ml-4 {!expandedInferences ? 'hidden' : ''}">
+								{#each Object.entries(mappingInference.sourceRequirementAssessments) as [source_urn, source_requirement_assessment]}
+									<li>
+										<p>
+											<a
+												class="anchor"
+												href="/requirement-assessments/{source_requirement_assessment.id}"
+											>
+												{source_requirement_assessment.str}
+											</a>
+										</p>
+										<p class="whitespace-pre-line py-1">
+											<span class="italic">{m.framework()}</span>
+											<a
+												class="anchor badge h-fit"
+												href="/frameworks/{source_requirement_assessment.source_framework.id}"
+											>
+												{source_requirement_assessment.source_framework.name}
+											</a>
+										</p>
+										<p class="whitespace-pre-line py-1">
+											<span class="italic">{m.mapping()}</span>
+											{#if source_requirement_assessment.used_mapping_set}
+												<a
+													class="anchor badge h-fit"
+													href="/requirement-mapping-sets/{source_requirement_assessment
+														.used_mapping_set?.id}"
+												>
+													{source_requirement_assessment.used_mapping_set?.name}
+												</a>
+											{:else}
+												<span class="text-gray-500">--</span>
+											{/if}
+										</p>
+										<p class="whitespace-pre-line py-1">
+											<span class="italic">{m.coverageColon()}</span>
+											<span class="badge h-fit">
+												{safeTranslate(toCamelCase(source_requirement_assessment.coverage))}
+											</span>
+										</p>
+										<p class="whitespace-pre-line py-1">
+											<span class="italic">{m.suggestionColon()}</span>
+											<span
+												class="badge {classesText} h-fit"
+												style="background-color: {complianceResultColorMap[
+													mappingInference.result
+												]};"
+											>
+												{safeTranslate(mappingInference.result)}
+											</span>
+										</p>
+										{#if mappingInference.annotation}
+											<p class="whitespace-pre-line py-1">
+												<span class="italic">{m.annotationColon()}</span>
+												{mappingInference.annotation}
+											</p>
+										{/if}
+									</li>
+								{/each}
+							</ul>
+						</div>
+
+						<button
+							onclick={() => (expandedInferences = !expandedInferences)}
+							class="m-5 text-blue-800"
+							aria-expanded={expandedInferences}
+						>
+							<i class="{expandedInferences ? 'fas fa-chevron-up' : 'fas fa-chevron-down'} mr-3"
+							></i>
+							{#if expandedInferences}
+								{m.hideInferences()}
+							{:else}
+								{m.showInferences()}
+							{/if}
+							({Object.keys(mappingInference.sourceRequirementAssessments).length})
+						</button>
 					</div>
 				{/if}
 			{/if}
 		</div>
 	{/if}
 	<div>
-		<TabGroup>
-			{#if !$page.data.user.is_third_party}
-				<Tab bind:group={tabSet} name="compliance_assessments_tab" value={0}
-					>{m.appliedControls()}
-				</Tab>
-			{/if}
-			<Tab bind:group={tabSet} name="risk_assessments_tab" value={1}>{m.evidences()}</Tab>
-			<svelte:fragment slot="panel">
-				{#if tabSet === 0 && !$page.data.user.is_third_party}
+		<Tabs
+			value={group}
+			onValueChange={(e) => {
+				group = e.value;
+			}}
+		>
+			<Tabs.List>
+				{#if !page.data.user.is_third_party}
+					<Tabs.Trigger value="applied_controls">{m.appliedControls()}</Tabs.Trigger>
+				{/if}
+				<Tabs.Trigger value="evidence">{m.evidences()}</Tabs.Trigger>
+				<Tabs.Indicator />
+			</Tabs.List>
+			<Tabs.Content value="applied_controls">
+				{#if !page.data.user.is_third_party}
 					<div class="flex items-center mb-2 px-2 text-xs space-x-2">
-						<i class="fa-solid fa-info-circle" />
+						<i class="fa-solid fa-info-circle"></i>
 						<p>{m.requirementAppliedControlHelpText()}</p>
 					</div>
-					<div
-						class="h-full flex flex-col space-y-2 variant-outline-surface rounded-container-token p-4"
-					>
+					<div class="h-full flex flex-col space-y-2 rounded-container p-4">
 						<ModelTable
 							source={data.tables['applied-controls']}
 							hideFilters={true}
 							URLModel="applied-controls"
-							baseEndpoint="/applied-controls?requirement_assessments={$page.data
+							expectedCount={countMasked(data.requirementAssessment.applied_controls)}
+							baseEndpoint="/applied-controls?requirement_assessments={page.data
 								.requirementAssessment.id}"
 						/>
 					</div>
 				{/if}
-				{#if tabSet === 1}
-					<div class="flex items-center mb-2 px-2 text-xs space-x-2">
-						<i class="fa-solid fa-info-circle" />
-						<p>{m.requirementEvidenceHelpText()}</p>
-					</div>
-					<div
-						class="h-full flex flex-col space-y-2 variant-outline-surface rounded-container-token p-4"
-					>
-						<ModelTable
-							source={data.tables['evidences']}
-							hideFilters={true}
-							URLModel="evidences"
-							baseEndpoint="/evidences?requirement_assessments={$page.data.requirementAssessment
-								.id}"
-						/>
-					</div>
-				{/if}
-			</svelte:fragment>
-		</TabGroup>
+			</Tabs.Content>
+			<Tabs.Content value="evidence">
+				<div class="flex items-center mb-2 px-2 text-xs space-x-2">
+					<i class="fa-solid fa-info-circle"></i>
+					<p>{m.requirementEvidenceHelpText()}</p>
+				</div>
+				<div class="h-full flex flex-col space-y-2 rounded-container p-4">
+					<ModelTable
+						source={data.tables['evidences']}
+						hideFilters={true}
+						URLModel="evidences"
+						expectedCount={countMasked(data.requirementAssessment.evidences)}
+						baseEndpoint="/evidences?requirement_assessments={page.data.requirementAssessment.id}"
+					/>
+				</div>
+			</Tabs.Content>
+		</Tabs>
 	</div>
-	{#if data.requirementAssessment.answer != null && Object.keys(data.requirementAssessment.answer).length !== 0}
-		<h1 class="font-semibold text-sm">{m.question()}</h1>
-		{#each data.requirementAssessment.answer.questions as question}
+	{#if data.requirementAssessment.requirement.questions != null && Object.keys(data.requirementAssessment.requirement.questions).length !== 0}
+		<h1 class="font-semibold text-sm">{m.questions()}</h1>
+		{#each Object.entries(data.requirementAssessment.requirement.questions) as [urn, question]}
 			<li class="flex justify-between items-center border rounded-xl p-2 disabled">
-				{question.text}
-				{#if question.answer}
-					<p class="text-sm font-semibold text-primary-500">{question.answer}</p>
-				{:else}
-					{m.undefined()}
-				{/if}
+				<p>{question.text} ({safeTranslate(question.type)})</p>
 			</li>
 		{/each}
 	{/if}
 	{#if data.requirementAssessment.observation}
-		<div class="card p-4 space-y-2 variant-glass-primary">
+		<div class="card p-4 space-y-2 preset-tonal-primary">
 			<h1 class="font-semibold text-sm">{m.observation()}</h1>
-			<span class="text-sm">{data.requirementAssessment.observation}</span>
+			<div class="text-sm">
+				<MarkdownRenderer content={data.requirementAssessment.observation} />
+			</div>
 		</div>
 	{/if}
+	{#if page.data?.featureflags?.comments}
+		<CommentsPanel parentType="requirement_assessment" parentId={data.requirementAssessment.id} />
+	{/if}
 	<div class="flex flex-row justify-between space-x-4">
-		<button class="btn bg-gray-400 text-white font-semibold w-full" type="button" on:click={cancel}
+		<button class="btn bg-gray-400 text-white font-semibold w-full" type="button" onclick={cancel}
 			>{m.back()}</button
 		>
 	</div>

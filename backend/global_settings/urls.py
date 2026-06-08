@@ -3,7 +3,13 @@ from rest_framework import routers
 
 from iam.sso.views import SSOSettingsViewSet
 
-from .views import GlobalSettingsViewSet, get_sso_info, GeneralSettingsViewSet
+from .views import (
+    GlobalSettingsViewSet,
+    get_default_language,
+    get_sso_info,
+    GeneralSettingsViewSet,
+    FeatureFlagsViewSet,
+)
 from .routers import DefaultSettingsRouter
 
 
@@ -22,9 +28,20 @@ settings_router.register(
     basename="general-settings",
 )
 
+settings_router.register(
+    r"feature-flags",
+    FeatureFlagsViewSet,
+    basename="feature-flags",
+)
+
 
 urlpatterns = [
     path(r"", include(router.urls)),
     path(r"", include(settings_router.urls)),
     path(r"sso/info/", get_sso_info, name="get_sso_info"),
+    path(
+        r"general/default-language/",
+        get_default_language,
+        name="get_default_language",
+    ),
 ]

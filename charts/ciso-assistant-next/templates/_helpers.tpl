@@ -28,7 +28,7 @@ Create chart name and version as used by the chart label.
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/* 
+{{/*
 Define CISO Assistant default tag version.
 */}}
 {{- define "ciso-assistant.defaultTag" -}}
@@ -67,9 +67,20 @@ app.kubernetes.io/component: {{ .component }}
 {{- end }}
 
 {{/*
+Create the name of the service account to use
+*/}}
+{{- define "ciso-assistant.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "ciso-assistant.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
 Define complete url based on scheme and domain
 */}}
 {{- define "ciso-assistant.url" -}}
-{{- $scheme := ternary "https" "http" .Values.global.tls -}}
+{{- $scheme := ternary "https" "http" (or .Values.global.tls .Values.ingress.tls.enabled) -}}
 {{- printf "%s://%s" $scheme .Values.global.domain -}}
 {{- end -}}

@@ -9,8 +9,8 @@ services:
       - CISO_ASSISTANT_URL=https://{{ fqdn }}:{{ port }}
       - DJANGO_DEBUG={{ enable_debug }}
       - AUTH_TOKEN_TTL=7200
-      - LICENSE_SEATS=5
-      - LICENSE_EXPIRATION=2025-12-21
+      - LICENSE_SEATS={{ license_seats }}
+      - LICENSE_EXPIRATION={{ license_expiration }}
       {% if need_mailer %}
       - EMAIL_HOST={{ email.host }}
       - EMAIL_PORT={{ email.port }}
@@ -22,7 +22,7 @@ services:
     volumes:
       - ./db:/code/db
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://backend:8000/api/build || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://backend:8000/api/health/ || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -47,8 +47,8 @@ services:
       - CISO_ASSISTANT_URL=https://{{ fqdn }}:{{ port }}
       - DJANGO_DEBUG=False
       - AUTH_TOKEN_TTL=7200
-      - LICENSE_SEATS=5
-      - LICENSE_EXPIRATION=2025-12-21
+      - LICENSE_SEATS={{ license_seats }}
+      - LICENSE_EXPIRATION={{ license_expiration }}
       {% if need_mailer %}
       - EMAIL_HOST={{ email.host }}
       - EMAIL_PORT={{ email.port }}

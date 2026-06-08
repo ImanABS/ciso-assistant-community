@@ -1,20 +1,24 @@
 <script lang="ts">
 	import type { PageData } from './$types';
-	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
+	import { Accordion, Progress } from '@skeletonlabs/skeleton-svelte';
 	import Anchor from '$lib/components/Anchor/Anchor.svelte';
 	import { complianceResultColorMap, complianceStatusColorMap } from '$lib/utils/constants';
 	import { safeTranslate } from '$lib/utils/i18n';
 	import * as m from '$paraglide/messages';
 	import { darkenColor } from '$lib/utils/helpers';
-	import { page } from '$app/stores';
-	import { ProgressRadial } from '@skeletonlabs/skeleton';
+	import { page } from '$app/state';
 	import { displayScoreColor, formatScoreValue } from '$lib/utils/helpers';
+	import MarkdownRenderer from '$lib/components/MarkdownRenderer.svelte';
 
-	export let data: PageData;
+	interface Props {
+		data: PageData;
+	}
+
+	let { data }: Props = $props();
 
 	// Create a map for faster lookups
-	$: memoizedRequirementAssessments = new Map(
-		data.requirementAssessments.map((ra) => [ra.compliance_assessment.id, ra])
+	let memoizedRequirementAssessments = $derived(
+		new Map(data.requirementAssessments.map((ra) => [ra.compliance_assessment.id, ra]))
 	);
 
 	function findRequirementAssessment(audit: string): any {
@@ -22,7 +26,7 @@
 	}
 
 	// Store only the current indices instead of duplicating the entire data structure
-	$: currentIndices = data.metrics.map((domain) => domain.perimeters.map(() => 0));
+	let currentIndices = $derived(data.metrics.map((domain) => domain.perimeters.map(() => 0)));
 
 	function updateCurrentIndex(domainIndex: number, perimeterIndex: number, increment: number) {
 		const perimeter = data.metrics[domainIndex].perimeters[perimeterIndex];
@@ -45,6 +49,8 @@
 	function getBadgeStyle(color: string) {
 		return `background-color: ${color + '44'}; color: ${darkenColor(color, 0.3)};`;
 	}
+
+	let openAccordionItems = $state(['requirement']);
 </script>
 
 <div
@@ -57,19 +63,23 @@
 				<span class="text-2xl font-black text-gray-800">{firstAssessment.name}</span>
 			{/if}
 			{#if firstAssessment?.description}
-				<span class="text-gray-600 blockquote">{firstAssessment.description}</span>
+				<div class="text-gray-600 blockquote">
+					<MarkdownRenderer content={firstAssessment.description} />
+				</div>
 			{/if}
 		</div>
 
 		{#each data.metrics as domain, domainIndex}
-			<Accordion class="my-4">
-				<AccordionItem open>
-					<svelte:fragment slot="lead">
-						<i class="fa-solid fa-sitemap text-primary-500"></i>
-					</svelte:fragment>
-
-					<svelte:fragment slot="summary">
-						<div class="flex flex-row space-x-4 items-center">
+			<Accordion
+				class="my-4"
+				value={openAccordionItems}
+				onValueChange={(e) => (openAccordionItems = e.value)}
+				multiple
+			>
+				<Accordion.Item value="requirement">
+					<Accordion.ItemTrigger class="flex w-full items-center cursor-pointer">
+						<i class="fa-solid fa-sitemap text-primary-500 mr-2"></i>
+						<div class="flex flex-row flex-1 space-x-4 items-center text-left">
 							<span class="font-bold text-lg text-gray-800">{domain.name}</span>
 
 							<!-- Compliance section -->
@@ -112,9 +122,20 @@
 								</div>
 							</div>
 						</div>
-					</svelte:fragment>
-
-					<svelte:fragment slot="content">
+						<Accordion.ItemIndicator
+							class="transition-transform duration-200 data-[state=open]:rotate-0 data-[state=closed]:-rotate-90"
+							><svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="14px"
+								height="14px"
+								viewBox="0 0 448 512"
+								><path
+									d="M201.4 374.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 306.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z"
+								/></svg
+							></Accordion.ItemIndicator
+						>
+					</Accordion.ItemTrigger>
+					<Accordion.ItemContent>
 						<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
 							{#each domain.perimeters as perimeter, perimeterIndex}
 								{@const assessment =
@@ -134,14 +155,14 @@
 													<button
 														aria-label="Previous assessment"
 														class="px-4 bg-gray-200 rounded hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
-														on:click={() => updateCurrentIndex(domainIndex, perimeterIndex, -1)}
+														onclick={() => updateCurrentIndex(domainIndex, perimeterIndex, -1)}
 													>
 														<i class="fa-solid fa-arrow-left"></i>
 													</button>
 
 													<Anchor
 														breadcrumbAction="push"
-														href={`/compliance-assessments/${assessment.id}?next=${$page.url.pathname}`}
+														href={`/compliance-assessments/${assessment.id}?next=${page.url.pathname}`}
 														label={assessment.name}
 														class="font-semibold text-lg text-primary-500 whitespace-nowrap text-ellipsis overflow-hidden"
 													>
@@ -152,7 +173,7 @@
 													<button
 														aria-label="Next assessment"
 														class="px-4 bg-gray-200 rounded hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
-														on:click={() => updateCurrentIndex(domainIndex, perimeterIndex, 1)}
+														onclick={() => updateCurrentIndex(domainIndex, perimeterIndex, 1)}
 													>
 														<i class="fa-solid fa-arrow-right"></i>
 													</button>
@@ -161,7 +182,7 @@
 												<div class="flex w-full items-center justify-center">
 													<Anchor
 														breadcrumbAction="push"
-														href={`/compliance-assessments/${assessment.id}?next=${$page.url.pathname}`}
+														href={`/compliance-assessments/${assessment.id}?next=${page.url.pathname}`}
 														label={assessment.name}
 														class="font-semibold text-lg text-primary-500 whitespace-nowrap text-ellipsis overflow-hidden"
 													>
@@ -174,13 +195,13 @@
 											<!-- Requirement Assessment Card -->
 											<Anchor
 												breadcrumbAction="push"
-												href={`/requirement-assessments/${requirementAssessment.id}?next=${$page.url.pathname}`}
+												href={`/requirement-assessments/${requirementAssessment.id}?next=${page.url.pathname}`}
 												label={requirementAssessment.name}
 												class="flex flex-col items-center justify-center space-y-2 border w-full h-full p-2 rounded-lg bg-gray-200 shadow-md hover:border-2"
 												style="border-color: {complianceResultColorMap[
 													requirementAssessment.result
 												]};
-												background-color: {complianceResultColorMap[requirementAssessment.result] + '10'};"
+													background-color: {complianceResultColorMap[requirementAssessment.result] + '10'};"
 											>
 												<div class="flex flex-row space-x-2">
 													<span
@@ -203,40 +224,58 @@
 
 												{#if requirementAssessment.is_scored}
 													<div class="flex flex-row space-x-2">
-														<ProgressRadial
-															stroke={100}
-															meter={displayScoreColor(
-																requirementAssessment.score,
-																assessment.max_score
-															)}
-															value={formatScoreValue(
-																requirementAssessment.score,
-																assessment.max_score
-															)}
-															font={150}
-															class="shrink-0"
-															width={'w-10'}
-														>
-															{requirementAssessment.score}
-														</ProgressRadial>
+														<div class="shrink-0 relative">
+															<Progress
+																value={formatScoreValue(
+																	requirementAssessment.score,
+																	assessment.max_score
+																)}
+																min={0}
+																max={100}
+															>
+																<Progress.Circle class="[--size:--spacing(10)]">
+																	<Progress.CircleTrack />
+																	<Progress.CircleRange
+																		class={displayScoreColor(
+																			requirementAssessment.score,
+																			assessment.max_score
+																		)}
+																	/>
+																</Progress.Circle>
+																<div class="absolute inset-0 flex items-center justify-center">
+																	<span class="text-xs font-bold"
+																		>{requirementAssessment.score}</span
+																	>
+																</div>
+															</Progress>
+														</div>
 
 														{#if assessment.show_documentation_score}
-															<ProgressRadial
-																stroke={100}
-																meter={displayScoreColor(
-																	requirementAssessment.documentation_score,
-																	assessment.max_score
-																)}
-																value={formatScoreValue(
-																	requirementAssessment.documentation_score,
-																	assessment.max_score
-																)}
-																font={150}
-																class="shrink-0"
-																width={'w-10'}
-															>
-																{requirementAssessment.documentation_score}
-															</ProgressRadial>
+															<div class="shrink-0 relative">
+																<Progress
+																	value={formatScoreValue(
+																		requirementAssessment.documentation_score,
+																		assessment.max_score
+																	)}
+																	min={0}
+																	max={100}
+																>
+																	<Progress.Circle class="[--size:--spacing(10)]">
+																		<Progress.CircleTrack />
+																		<Progress.CircleRange
+																			class={displayScoreColor(
+																				requirementAssessment.documentation_score,
+																				assessment.max_score
+																			)}
+																		/>
+																	</Progress.Circle>
+																	<div class="absolute inset-0 flex items-center justify-center">
+																		<span class="text-xs font-bold"
+																			>{requirementAssessment.documentation_score}</span
+																		>
+																	</div>
+																</Progress>
+															</div>
 														{/if}
 													</div>
 												{/if}
@@ -246,8 +285,8 @@
 								{/if}
 							{/each}
 						</div>
-					</svelte:fragment>
-				</AccordionItem>
+					</Accordion.ItemContent>
+				</Accordion.Item>
 			</Accordion>
 		{/each}
 	{:else}

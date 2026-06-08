@@ -1,40 +1,62 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	export let width = 'w-auto';
-	export let height = 'h-full';
-	export let classesContainer = '';
-	export let data;
-	export let names;
-	export let uuids;
-	import * as m from '$paraglide/messages';
+	import { m } from '$paraglide/messages';
+	interface Props {
+		name?: string;
+		width?: string;
+		height?: string;
+		classesContainer?: string;
+		data: any;
+		names: any;
+		uuids: any;
+		title?: string;
+		colors?: string[];
+		seriesNames?: string[];
+	}
 
-	const chart_id = `stacked_div`;
-	onMount(async () => {
-		const echarts = await import('echarts');
-		let chart = echarts.init(document.getElementById(chart_id), null, { renderer: 'svg' });
-		const rawData = data;
-		const auditTotals = rawData.map((audit) => audit.reduce((sum, val) => sum + val, 0));
-		const uuidMap = uuids;
-		chart.on('click', function (params) {
-			if (uuidMap[params.name]) {
-				window.open(`/compliance-assessments/${uuidMap[params.name]}`, '_blank');
-				//window.location.href = `/compliance-assessments/${uuidMap[params.name]}`;
-			}
-		});
-		const grid = {
-			left: 150,
-			right: 50,
-			top: 50,
-			bottom: 50
-		};
-
-		const seriesNames = [
+	let {
+		name = 'stacked',
+		width = 'w-auto',
+		height = 'h-full',
+		classesContainer = '',
+		data,
+		names,
+		uuids,
+		title = '',
+		colors = ['#d7dfea', '#74C0DE', '#E66', '#91CC75', '#EAE2D7'],
+		seriesNames = [
 			'not assessed',
 			'partially compliant',
 			'non compliant',
 			'compliant',
 			'not applicable'
-		];
+		]
+	}: Props = $props();
+
+	function truncateString(maxLength: number) {
+		return (name) => (name.length > maxLength ? name.substring(0, maxLength) + '...' : name);
+	}
+
+	const chart_id = `${name}_stacked_div`;
+
+	onMount(async () => {
+		const echarts = await import('echarts');
+		let chart = echarts.init(document.getElementById(chart_id), null, { renderer: 'svg' });
+		const rawData = data;
+		const auditTotals = rawData.map((audit) => audit.reduce((sum, val) => sum + val, 0));
+		chart.on('click', function (params) {
+			const index = params.dataIndex;
+			if (index !== undefined && uuids && uuids[index]) {
+				window.open(`/compliance-assessments/${uuids[index]}`, '_blank');
+			}
+		});
+
+		const grid = {
+			left: 150,
+			right: 10,
+			top: 80,
+			bottom: 50
+		};
 
 		// Map the internal names to translated labels
 		const getSeriesLabel = (name: string) => {
@@ -74,11 +96,13 @@
 		});
 
 		var option = {
-			color: ['#d7dfea', '#74C0DE', '#E66', '#91CC75', '#EAE2D7'],
-			//color: ['#D2D5DB', '#FDE048', '#F87171', '#86EFAC', '#000'],
+			color: colors,
+			title: { text: title },
 			legend: {
 				selectedMode: false,
-				formatter: (name) => getSeriesLabel(name)
+				formatter: (name) => getSeriesLabel(name),
+				top: 35,
+				left: 'center'
 			},
 			grid,
 			xAxis: {
@@ -87,7 +111,8 @@
 			},
 			yAxis: {
 				type: 'category',
-				data: names,
+				name: '',
+				data: names.map(truncateString(20)),
 				axisTick: {
 					show: false
 				},
@@ -95,7 +120,18 @@
 					show: false
 				}
 			},
-			series
+			series,
+			tooltip: {
+				trigger: 'axis',
+				axisPointer: {
+					type: 'shadow-sm'
+				},
+				formatter: (params) => {
+					// Find the index of the hovered item and show full name
+					const index = params[0].dataIndex;
+					return names[index];
+				}
+			}
 		};
 
 		chart.setOption(option);
@@ -107,7 +143,7 @@
 </script>
 
 {#if data.length > 0}
-	<div id={chart_id} class="{width} {height} {classesContainer}" />
+	<div id={chart_id} class="{width} {height} {classesContainer}"></div>
 {:else}
 	<div class="flex justify-center items-center h-full">
 		<div class="font-semibold">

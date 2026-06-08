@@ -1,14 +1,14 @@
 import { BASE_API_URL } from '$lib/utils/constants';
 import { getModelInfo, urlParamModelVerboseName } from '$lib/utils/crud';
 
-import * as m from '$paraglide/messages';
+import { m } from '$paraglide/messages';
 
 import { safeTranslate } from '$lib/utils/i18n';
 import { modelSchema } from '$lib/utils/schemas';
 import { fail, redirect, type RequestEvent } from '@sveltejs/kit';
 import { setFlash } from 'sveltekit-flash-message/server';
 import { message, setError, superValidate, type SuperValidated } from 'sveltekit-superforms';
-import { zod } from 'sveltekit-superforms/adapters';
+import { zod4 as zod } from 'sveltekit-superforms/adapters';
 import { z } from 'zod';
 import { getSecureRedirect } from './helpers';
 
@@ -78,12 +78,19 @@ export async function handleErrorResponse({
 		setFlash({ type: 'warning', message: safeTranslate(res.warning) }, event);
 		return message(form, { warning: res.warning });
 	}
-	if (res.error) {
-		setFlash({ type: 'error', message: safeTranslate(res.error) }, event);
-		return message(form, { error: res.error });
+	if (res.error || res.detail) {
+		setFlash(
+			{ type: 'error', message: safeTranslate(res.error || res.detail), timeout: 10000 },
+			event
+		);
+		return message(form, { error: res.error || res.detail });
 	}
 	Object.entries(res).forEach(([key, value]) => {
-		setError(form, key, safeTranslate(value));
+		if (Array.isArray(value)) {
+			value.forEach((item: string) => setError(form, key, safeTranslate(item)));
+		} else {
+			setError(form, key, safeTranslate(value));
+		}
 	});
 	return message(form, { status: response.status });
 }
@@ -149,8 +156,14 @@ export async function defaultWriteFormAction({
 				body: file
 			};
 			const fileUploadRes = await event.fetch(fileUploadEndpoint, fileUploadRequestInitOptions);
-			if (!fileUploadRes.ok)
+			if (!fileUploadRes.ok) {
+				// Clean up the created object if file upload fails during creation
+				if (action === 'create') {
+					const deleteEndpoint = `${BASE_API_URL}/${urlModel}/${writtenObject.id}/`;
+					await event.fetch(deleteEndpoint, { method: 'DELETE' });
+				}
 				return await handleErrorResponse({ event, response: fileUploadRes, form });
+			}
 		}
 	}
 
@@ -160,7 +173,7 @@ export async function defaultWriteFormAction({
 	};
 
 	if (urlModel == 'users') {
-		(flashParams.type = 'warning'), (flashParams.message += safeTranslate('userHasNoRights'));
+		((flashParams.type = 'warning'), (flashParams.message += safeTranslate('userHasNoRights')));
 	}
 	setFlash(flashParams, event);
 
@@ -179,7 +192,6 @@ export async function nestedWriteFormAction({
 	redirectToWrittenObject = false
 }: {
 	event: RequestEvent;
-
 	action: FormAction;
 	redirectToWrittenObject: boolean;
 }) {
@@ -224,7 +236,10 @@ export async function defaultDeleteFormAction({
 	if (!res.ok) {
 		const response = await res.json();
 		if (response.error) {
-			setFlash({ type: 'error', message: safeTranslate(response.error) }, event);
+			const errorMessages = Array.isArray(response.error) ? response.error : [response.error];
+			errorMessages.forEach((error) => {
+				setFlash({ type: 'error', message: safeTranslate(error) }, event);
+			});
 			return message(deleteForm, { status: res.status });
 		}
 		if (response.non_field_errors) {

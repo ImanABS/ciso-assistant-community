@@ -1,22 +1,9 @@
 <script lang="ts">
-	import { displayScoreColor, formatScoreValue } from '$lib/utils/helpers';
-	import { ProgressRadial, RangeSlider } from '@skeletonlabs/skeleton';
-	import { createEventDispatcher } from 'svelte';
+	import { run } from 'svelte/legacy';
+
+	import { displayScoreColor } from '$lib/utils/helpers';
+	import { Progress } from '@skeletonlabs/skeleton-svelte';
 	import { formFieldProxy, type SuperForm } from 'sveltekit-superforms';
-
-	export let label: string | undefined = undefined;
-	export let field: string;
-	export let isDoc: boolean = false;
-	export let fullDonut: boolean = false;
-	export let inversedColors: boolean = false;
-	export let styles: string = '';
-
-	export let min_score = 0;
-	export let max_score = 100;
-	export let score_step = 1;
-	export let helpText: string | undefined = undefined;
-
-	export let disabled: boolean = false;
 
 	interface ScoresDefinition {
 		score: number;
@@ -24,30 +11,59 @@
 		description: string;
 	}
 
-	export let scores_definition: ScoresDefinition[] = [];
-
-	export let form: SuperForm<Record<string, any>>;
-	const { value, errors, constraints } = formFieldProxy(form, field);
-
-	const dispatch = createEventDispatcher();
-	let previous = [$value];
-
-	export let score = $value;
-	$: score = $value;
-
-	$: {
-		if (previous[0] !== $value && previous[0] !== undefined) {
-			dispatch('change', { score: $value });
-		}
-		previous = [$value];
+	interface Props {
+		label?: string | undefined;
+		field: string;
+		isDoc?: boolean;
+		fullDonut?: boolean;
+		inversedColors?: boolean;
+		styles?: string;
+		min_score?: number;
+		max_score?: number;
+		score_step?: number;
+		helpText?: string | undefined;
+		disabled?: boolean;
+		scores_definition?: ScoresDefinition[];
+		form: SuperForm<Record<string, any>>;
+		score?: any;
+		onChange?: (score: number) => void;
+		left?: import('svelte').Snippet;
 	}
 
-	$: if (max_score === 100) score_step = 5;
+	let {
+		label = undefined,
+		field,
+		isDoc = false,
+		fullDonut = false,
+		inversedColors = false,
+		styles = '',
+		min_score = 0,
+		max_score = 100,
+		score_step = $bindable(max_score === 100 ? 5 : 1),
+		helpText = undefined,
+		disabled = false,
+		scores_definition = [],
+		form,
+		onChange = () => {},
+		left
+	}: Props = $props();
 
-	$: $value = !disabled ? ($value ?? min_score) : $value;
+	const { value, errors, constraints } = formFieldProxy(form, field);
+	let previous = $state($value);
+
+	$effect(() => {
+		if (previous !== $value && previous !== undefined) {
+			onChange($value);
+		}
+		previous = $value;
+	});
+
+	run(() => {
+		$value = !disabled ? ($value ?? min_score) : $value;
+	});
 </script>
 
-<slot name="left" />
+{@render left?.()}
 {#if !disabled}
 	<div class={styles}>
 		{#if $errors && $errors.length > 0}
@@ -58,56 +74,62 @@
 			</div>
 		{/if}
 		<div class="flex flex-row w-full items-center justify-evenly space-x-4">
-			<div class="flex w-full items-center justify-center border-2 rounded-lg p-2">
-				<RangeSlider
-					class="w-full"
+			<div class="flex flex-col w-full align-top">
+				{#if label !== undefined}
+					{#if $constraints?.required}
+						<label class="text-sm font-semibold" for={field}
+							>{label} <span class="text-red-500">*</span></label
+						>
+					{:else}
+						<label class="text-sm font-semibold" for={field}>{label}</label>
+					{/if}
+				{/if}
+				<input
 					data-testid="range-slider-input"
-					name="range-slider"
+					name={field}
+					type="range"
+					class="input px-0"
 					bind:value={$value}
 					min={min_score}
 					max={max_score}
 					step={score_step}
-					ticked
 					{disabled}
+					{...constraints}
+				/>
+			</div>
+			<div class="shrink-0 relative">
+				<Progress
+					value={fullDonut ? max_score : $value}
+					min={0}
+					max={max_score}
+					data-testid="progress-ring-svg"
 				>
-					<div class="flex justify-between space-x-8 w-full items-start">
-						{#if label !== undefined}
-							{#if $constraints?.required}
-								<label class="text-sm font-semibold" for={field}
-									>{label} <span class="text-red-500">*</span></label
-								>
-							{:else}
-								<label class="text-sm font-semibold" for={field}>{label}</label>
-							{/if}
-						{/if}
-
-						<div class="flex space-x-8 w-full justify-center">
-							<p class="w-full max-w-[80ch] justify-center text-center whitespace-pre-wrap">
-								{#if !disabled && scores_definition && $value !== null}
-									{#each scores_definition as definition}
-										{#if definition.score === $value}
-											<p class="font-bold">{definition.name}</p>
-											{#if isDoc && definition.description_doc}
-												{definition.description_doc}
-											{:else if definition.description}
-												{definition.description}
-											{/if}
-										{/if}
-									{/each}
-								{/if}
-							</p>
-						</div>
-						<ProgressRadial
-							stroke={100}
-							meter={displayScoreColor($value, max_score, inversedColors)}
-							value={!disabled ? formatScoreValue($value, max_score, fullDonut) : min_score}
-							font={150}
-							class="shrink-0"
-							border-4
-							width={'w-12'}>{!disabled ? $value : '--'}</ProgressRadial
-						>
+					<Progress.Circle class="[--size:--spacing(12)]">
+						<Progress.CircleTrack />
+						<Progress.CircleRange class={displayScoreColor($value, max_score, inversedColors)} />
+					</Progress.Circle>
+					<div class="absolute inset-0 flex items-center justify-center">
+						<span class="text-xs font-bold">{$value}</span>
 					</div>
-				</RangeSlider>
+				</Progress>
+			</div>
+		</div>
+		<div class="flex w-full items-center">
+			<div class="flex space-x-8 w-full justify-center">
+				<div class="w-full max-w-[80ch] justify-center text-center whitespace-pre-wrap">
+					{#if !disabled && scores_definition && $value !== null}
+						{#each scores_definition as definition}
+							{#if definition.score === $value}
+								<p class="font-bold">{definition.name}</p>
+								{#if isDoc && definition.description_doc}
+									{definition.description_doc}
+								{:else if definition.description}
+									{definition.description}
+								{/if}
+							{/if}
+						{/each}
+					{/if}
+				</div>
 			</div>
 		</div>
 		{#if helpText}

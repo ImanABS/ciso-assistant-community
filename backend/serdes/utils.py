@@ -1,4 +1,4 @@
-from typing import Iterable
+from typing import List, Type, Set, Dict, Optional, Iterable
 
 import django.apps
 from django.contrib.contenttypes.models import ContentType
@@ -9,12 +9,12 @@ from collections import defaultdict
 
 from iam.models import Folder
 from rest_framework.exceptions import ValidationError
-from typing import List, Type, Set, Dict, Optional
 
 from core.models import (
     Asset,
     AppliedControl,
     Evidence,
+    EvidenceRevision,
     Framework,
     Perimeter,
     RiskAssessment,
@@ -45,6 +45,7 @@ from core.serializers import (
     AssetImportExportSerializer,
     AppliedControlImportExportSerializer,
     EvidenceImportExportSerializer,
+    EvidenceRevisionImportExportSerializer,
     PerimeterImportExportSerializer,
     RiskAssessmentImportExportSerializer,
     RiskScenarioImportExportSerializer,
@@ -149,6 +150,7 @@ def import_export_serializer_class(model: Model) -> serializers.Serializer:
         Asset: AssetImportExportSerializer,
         AppliedControl: AppliedControlImportExportSerializer,
         Evidence: EvidenceImportExportSerializer,
+        EvidenceRevision: EvidenceRevisionImportExportSerializer,
         Perimeter: PerimeterImportExportSerializer,
         RiskAssessment: RiskAssessmentImportExportSerializer,
         RiskScenario: RiskScenarioImportExportSerializer,
@@ -361,7 +363,16 @@ def sort_objects_by_self_reference(
     return [object_map[obj_id] for obj_id in reversed(sorted_ids)]
 
 
-def get_domain_export_objects(domain: Folder):
+def get_domain_export_objects(domain: Folder) -> dict[str, Iterable[models.Model]]:
+    """
+    Get all objects related to a domain for export.
+
+    Args:
+        domain: The domain Folder instance.
+
+    Returns:
+        A dictionary mapping model names to QuerySets of related objects;
+    """
     folders = (
         Folder.objects.filter(
             Q(id=domain.id) | Q(id__in=[f.id for f in domain.get_sub_folders()])
@@ -456,6 +467,10 @@ def get_domain_export_objects(domain: Folder):
         | Q(requirement_assessments__in=requirement_assessments)
     ).distinct()
 
+    evidence_revisions = EvidenceRevision.objects.filter(
+        Q(folder__in=folders) | Q(evidence__in=evidences)
+    )
+
     loaded_libraries = LoadedLibrary.objects.filter(
         Q(folder__in=folders)
         | Q(threats__in=threats)
@@ -485,6 +500,7 @@ def get_domain_export_objects(domain: Folder):
         "appliedcontrol": applied_controls,
         "entity": entities,
         "evidence": evidences,
+        "evidencerevision": evidence_revisions,
         "perimeter": perimeters,
         "complianceassessment": compliance_assessments,
         "requirementassessment": requirement_assessments,

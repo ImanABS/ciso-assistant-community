@@ -1,27 +1,36 @@
 <script lang="ts">
-	// Most of your app wide CSS should be put in this file
-	import '../app.postcss';
+	import { run } from 'svelte/legacy';
+	import { onMount } from 'svelte';
+
+	// Most of the app wide CSS should be put in this file
+	import '../app.css';
 	import '@fortawesome/fontawesome-free/css/all.min.css';
+
 	import { browser } from '$app/environment';
 
-	import { computePosition, autoUpdate, offset, shift, flip, arrow } from '@floating-ui/dom';
-
-	import { getToastStore, storePopup } from '@skeletonlabs/skeleton';
-	storePopup.set({ computePosition, autoUpdate, offset, shift, flip, arrow });
-
-	// Initializing stores prevents known security issues with SvelteKit SSR
-	// https://github.com/skeletonlabs/skeleton/wiki/SvelteKit-SSR-Warning
-	import { initializeStores } from '@skeletonlabs/skeleton';
-
-	initializeStores();
+	onMount(() => {
+		document.body.dataset.hydrated = 'true';
+	});
 
 	import Toast from '$lib/components/Toast/Toast.svelte';
-	import Modal from '$lib/components/Modals/Modal.svelte';
-	import type { ModalComponent, ToastSettings } from '@skeletonlabs/skeleton';
-	import { clientSideToast } from '$lib/utils/stores';
+	import Dialog from '$lib/components/Modals/Modal.svelte';
+	import DisplayJSONModal from '$lib/components/Modals/DisplayJSONModal.svelte';
+	import CreateModal from '$lib/components/Modals/CreateModal.svelte';
+	import DeleteConfirmModal from '$lib/components/Modals/DeleteConfirmModal.svelte';
+	import ProblematicScenariosModal from '$lib/components/Modals/ProblematicScenariosModal.svelte';
+	import { initializeModalStore, type ModalComponent } from '$lib/components/Modals/stores';
+	import {
+		initializeToastStore,
+		getToastStore,
+		type ToastSettings
+	} from '$lib/components/Toast/stores';
 
 	import { getFlash } from 'sveltekit-flash-message';
 	import { page } from '$app/stores';
+	import { clientSideToast } from '$lib/utils/stores';
+
+	initializeModalStore();
+	initializeToastStore();
 
 	const flash = getFlash(page);
 	const toastStore = getToastStore();
@@ -37,21 +46,34 @@
 	interface FlashMessage {
 		message: string;
 		type: 'success' | 'error' | 'warning' | 'info';
+		timeout?: number;
+		autohide?: boolean;
 	}
 
 	function handleToast(flash: FlashMessage | undefined) {
 		if (!flash) return;
 
-		toast(flash.message, {
-			background:
-				flash.type == 'success'
-					? 'variant-filled-success'
-					: flash.type === 'error'
-						? 'variant-filled-error'
-						: flash.type == 'warning'
-							? 'variant-filled-warning'
-							: 'variant-filled-primary'
-		});
+		const background =
+			flash.type == 'success'
+				? 'preset-filled-success-500'
+				: flash.type === 'error'
+					? 'preset-filled-error-500'
+					: flash.type == 'warning'
+						? 'preset-filled-warning-500'
+						: 'preset-filled-primary-500';
+
+		const toastOptions: ToastSettings = {
+			background
+		};
+
+		if (flash.timeout !== undefined) {
+			toastOptions.timeout = flash.timeout;
+		}
+		if (flash.autohide !== undefined) {
+			toastOptions.autohide = flash.autohide;
+		}
+
+		toast(flash.message, toastOptions);
 	}
 
 	clientSideToast.subscribe((flash) => {
@@ -66,33 +88,34 @@
 		flash.set(undefined);
 	});
 
-	import DisplayJSONModal from '$lib/components/Modals/DisplayJSONModal.svelte';
-	import CreateModal from '$lib/components/Modals/CreateModal.svelte';
-	import DeleteConfirmModal from '$lib/components/Modals/DeleteConfirmModal.svelte';
-	import ParaglideJsProvider from './ParaglideJsProvider.svelte';
+	interface Props {
+		children?: import('svelte').Snippet;
+	}
+
+	let { children }: Props = $props();
 
 	const modalRegistry: Record<string, ModalComponent> = {
 		// Set a unique modal ID, then pass the component reference
 		displayJSONModal: { ref: DisplayJSONModal },
 		createModal: { ref: CreateModal },
-		deleteConfirmModal: { ref: DeleteConfirmModal }
+		deleteConfirmModal: { ref: DeleteConfirmModal },
+		problematicScenariosModal: { ref: ProblematicScenariosModal }
 	};
 
-	$: if (browser && $page.url.searchParams.has('refresh')) {
-		$page.url.searchParams.delete('refresh');
-		window.location.href = $page.url.href;
-	}
+	run(() => {
+		if (browser && $page.url.searchParams.has('refresh')) {
+			$page.url.searchParams.delete('refresh');
+			window.location.href = $page.url.href;
+		}
+	});
 </script>
 
 <svelte:head><link rel="icon" href="/favicon.ico" /></svelte:head>
+<Dialog components={modalRegistry} />
+<Toast zIndex="z-[1000]" />
+{@render children?.()}
 
-<ParaglideJsProvider>
-	<Modal components={modalRegistry} />
-	<Toast />
-	<slot />
-
-	{#if $flash}
-		{@const bg = $flash.type == 'success' ? '#3D9970' : '#FF4136'}
-		<div style:background-color={bg} class="flash">{$flash.message}</div>
-	{/if}
-</ParaglideJsProvider>
+{#if $flash}
+	{@const bg = $flash.type == 'success' ? '#3D9970' : '#FF4136'}
+	<div style:background-color={bg} class="flash">{$flash.message}</div>
+{/if}

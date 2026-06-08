@@ -2,7 +2,7 @@ import { BASE_API_URL } from '$lib/utils/constants';
 import { urlParamModelVerboseName } from '$lib/utils/crud';
 import { safeTranslate } from '$lib/utils/i18n';
 
-import * as m from '$paraglide/messages';
+import { m } from '$paraglide/messages';
 
 import {
 	handleErrorResponse,
@@ -12,8 +12,9 @@ import {
 import { modelSchema } from '$lib/utils/schemas';
 import { fail, type Actions } from '@sveltejs/kit';
 import { setFlash } from 'sveltekit-flash-message/server';
-import { setError, superValidate } from 'sveltekit-superforms';
-import { zod } from 'sveltekit-superforms/adapters';
+import { message, superValidate } from 'sveltekit-superforms';
+import { zod4 as zod } from 'sveltekit-superforms/adapters';
+import { z } from 'zod';
 
 export const actions: Actions = {
 	create: async (event) => {
@@ -47,6 +48,9 @@ export const actions: Actions = {
 
 		if (!response.ok) return handleErrorResponse({ event, response, form });
 
+		const res = await response.json();
+		const newId = res.results?.id;
+
 		const modelVerboseName: string = urlParamModelVerboseName(urlModel);
 		setFlash(
 			{
@@ -58,6 +62,54 @@ export const actions: Actions = {
 			event
 		);
 
+		if (newId) {
+			return message(form, { redirect: `/risk-assessments/${newId}` });
+		}
+
 		return { form };
+	},
+	syncToActions: async (event) => {
+		const formData = await event.request.formData();
+
+		if (!formData) {
+			return fail(400, { form: null });
+		}
+
+		console.log(formData);
+
+		const schema = z.object({ reset_residual: z.boolean().optional() });
+		const form = await superValidate(formData, zod(schema));
+
+		const response = await event.fetch(
+			`${BASE_API_URL}/risk-assessments/${event.params.id}/sync-to-actions/?dry_run=false`,
+			{
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify(form.data)
+			}
+		);
+		if (response.ok) {
+			setFlash(
+				{
+					type: 'success',
+					message: m.syncToAppliedControlsSuccess()
+				},
+				event
+			);
+		} else {
+			setFlash(
+				{
+					type: 'error',
+					message: m.syncToAppliedControlsError()
+				},
+				event
+			);
+		}
+		const r = response.clone();
+		console.log(await r.text());
+		console.log(form.data);
+		return { form, message: { riskScenarios: await response.json() } };
 	}
 };

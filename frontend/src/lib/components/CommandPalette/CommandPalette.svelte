@@ -1,103 +1,257 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { page } from '$app/stores';
-	import { Command } from 'cmdk-sv';
-	import { onMount, onDestroy } from 'svelte';
-	import { writable } from 'svelte/store';
 	import { safeTranslate } from '$lib/utils/i18n';
-	import { navigationLinks } from './paletteData.ts';
+	import { navigationLinks } from './paletteData';
 	import { goto } from '$lib/utils/breadcrumbs';
+	import { page } from '$app/state';
+	import { navData } from '../SideBar/navData';
+	import { getSidebarVisibleItems } from '$lib/utils/sidebar-config';
+	import { m } from '$paraglide/messages';
 
-	// Create a store for command palette visibility
-	export const commandPaletteOpen = writable(false);
+	let opened = $state(false);
+	let searchInput: HTMLElement | null = $state(null);
 
-	// Custom case-insensitive filter
-	function caseInsensitiveFilter(value: string, search: string) {
-		return value.toLowerCase().includes(search.toLowerCase()) ? 1 : 0;
-	}
-
-	// Keyboard shortcut handler
-	function handleKeydown(e: KeyboardEvent) {
-		if (browser && (e.metaKey || e.ctrlKey) && e.key === 'k') {
-			e.preventDefault();
-			commandPaletteOpen.update((current) => !current);
-		}
-	}
+	const isMac = browser && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+	const modifierKey = isMac ? '⌘' : 'Ctrl';
 
 	// Generate navigation commands with automatic close
 	const navigationCommands = navigationLinks.map((link) => ({
 		label: safeTranslate(link.label),
 		value: link.href,
+		icon: link.icon,
 		onSelect: () => {
-			commandPaletteOpen.set(false);
+			opened = false;
 			goto(link.href, { label: link.label, breadcrumbAction: 'replace' });
 		}
 	}));
 
-	// Close command palette on route change
-	$: if ($page.url.pathname) {
-		commandPaletteOpen.set(false);
+	const featureFlags = $derived(page.data?.featureflags ?? {});
+	const sideBarVisibleItems = $derived(getSidebarVisibleItems(featureFlags));
+
+	const visibilityKeyByHref = Object.fromEntries(
+		(navData.items ?? [])
+			.flatMap((section) => section.items ?? [])
+			.filter((item) => item?.href && item?.name)
+			.map((item) => [item.href, item.name])
+	);
+
+	// Strip accents/diacritics for accent-insensitive matching
+	function normalize(str: string): string {
+		return str
+			.normalize('NFD')
+			.replace(/[\u0300-\u036f]/g, '')
+			.toLowerCase();
 	}
 
-	// Add global event listener
-	onMount(() => {
-		if (browser) {
-			window.addEventListener('keydown', handleKeydown);
+	let selected = $state(0);
+	let searchText = $state('');
+	let filteredNavigationCommands = $derived(
+		navigationCommands
+			.filter((link) => normalize(link.label).includes(normalize(searchText)))
+			.filter((link) => {
+				const visibilityKey = visibilityKeyByHref[link.value];
+				if (!visibilityKey) return true;
+				return sideBarVisibleItems[visibilityKey] !== false;
+			})
+	);
+
+	$effect(() => {
+		if (selected >= filteredNavigationCommands.length) {
+			selected = 0;
+		}
+	});
+	$effect(() => {
+		if (opened) {
+			searchInput?.focus();
 		}
 	});
 
-	onDestroy(() => {
-		if (browser) {
-			window.removeEventListener('keydown', handleKeydown);
+	export function toggle() {
+		searchText = '';
+		selected = 0;
+		opened = !opened;
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (!browser) return;
+		if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+			e.preventDefault();
+			toggle();
 		}
-	});
+		if (!opened) return;
+
+		if (e.key === 'Escape') {
+			opened = false;
+		} else if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			if (selected < filteredNavigationCommands.length - 1) {
+				selected++;
+			}
+			document
+				.querySelector(`[data-cmdk-nav-btn]:nth-of-type(${selected + 1})`)
+				?.scrollIntoView({ block: 'nearest' });
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			if (selected > 0) {
+				selected--;
+			}
+			document
+				.querySelector(`[data-cmdk-nav-btn]:nth-of-type(${selected + 1})`)
+				?.scrollIntoView({ block: 'nearest' });
+		} else if (e.key === 'Enter') {
+			const selectedLink = filteredNavigationCommands[selected];
+			if (selectedLink) {
+				selectedLink.onSelect();
+			} else if (searchText.trim()) {
+				// No nav match — launch universal search
+				opened = false;
+				goto(`/search?q=${encodeURIComponent(searchText.trim())}`, {
+					label: 'search',
+					breadcrumbAction: 'replace'
+				});
+			}
+		}
+	}
 </script>
 
-<Command.Dialog bind:open={$commandPaletteOpen} label="Command Menu">
-	<Command.Root filter={caseInsensitiveFilter}>
-		<Command.Input placeholder="Type a command..." />
-		<Command.List>
-			<Command.Empty>No results found.</Command.Empty>
-			<Command.Group heading="Navigation">
-				{#each navigationCommands as command}
-					<Command.Item value={command.label} onSelect={command.onSelect}>
-						{command.label}
-					</Command.Item>
-				{/each}
-			</Command.Group>
-			<Command.Separator />
-		</Command.List>
-	</Command.Root>
-</Command.Dialog>
+<svelte:window onkeydown={handleKeydown} />
 
-<style lang="postcss">
-	/* Global styles for the command palette */
-	:global([data-cmdk-dialog]) {
-		@apply fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-2;
+{#if opened}
+	<!-- Backdrop -->
+	<div
+		class="fixed inset-0 z-[9999] flex items-start justify-center pt-[15vh] bg-black/50 backdrop-blur-sm"
+		role="presentation"
+		onclick={(e) => {
+			if (e.target === e.currentTarget) opened = false;
+		}}
+		onkeydown={() => {}}
+	>
+		<!-- Palette container -->
+		<div
+			class="w-full max-w-lg mx-4 overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-black/10 animate-in"
+		>
+			<!-- Search input -->
+			<div class="flex items-center gap-3 px-4 border-b border-gray-200">
+				<i class="fa-solid fa-magnifying-glass text-gray-400 text-sm"></i>
+				<input
+					class="w-full bg-transparent py-3.5 text-sm text-gray-900 placeholder-gray-400 outline-none border-none ring-0 focus:outline-none focus:border-none focus:ring-0 shadow-none"
+					type="text"
+					bind:value={searchText}
+					bind:this={searchInput}
+					placeholder={m.searchPagesAndObjects()}
+				/>
+				<button
+					onclick={() => (opened = false)}
+					class="shrink-0 rounded-md border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 hover:bg-gray-100 cursor-pointer"
+				>
+					ESC
+				</button>
+			</div>
+
+			<!-- Results -->
+			<div class="max-h-72 overflow-y-auto overscroll-contain">
+				{#if filteredNavigationCommands.length > 0}
+					<div class="px-3 py-2">
+						<span class="text-[11px] font-semibold uppercase tracking-wider text-gray-400 px-1"
+							>{m.commandPaletteNavigation()}</span
+						>
+					</div>
+					<div class="px-2 pb-2">
+						{#each filteredNavigationCommands as navigationCommand, index}
+							<button
+								class="w-full flex items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors cursor-pointer
+									{selected === index ? 'bg-violet-50 text-violet-900' : 'text-gray-700 hover:bg-gray-50'}"
+								data-cmdk-nav-btn=""
+								onmouseenter={() => {
+									selected = index;
+								}}
+								onclick={navigationCommand.onSelect}
+							>
+								{#if navigationCommand.icon}
+									<i
+										class="{navigationCommand.icon} w-4 text-center text-xs {selected === index
+											? 'text-violet-500'
+											: 'text-gray-400'}"
+									></i>
+								{/if}
+								<span class="flex-1 truncate">{navigationCommand.label}</span>
+								{#if selected === index}
+									<span class="text-[10px] text-violet-400">↵</span>
+								{/if}
+							</button>
+						{/each}
+					</div>
+				{:else}
+					<div class="flex flex-col items-center justify-center py-10 text-gray-400">
+						<i class="fa-solid fa-magnifying-glass text-2xl mb-2"></i>
+						<span class="text-sm">{m.commandPaletteNoResults()}</span>
+						{#if searchText.trim()}
+							<button
+								class="mt-3 flex items-center gap-2 rounded-lg bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-600 hover:bg-violet-100 transition-colors cursor-pointer"
+								onclick={() => {
+									opened = false;
+									goto(`/search?q=${encodeURIComponent(searchText.trim())}`, {
+										label: 'search',
+										breadcrumbAction: 'replace'
+									});
+								}}
+							>
+								<i class="fa-solid fa-arrow-right text-[10px]"></i>
+								{m.commandPaletteSearchHint()}
+							</button>
+						{/if}
+					</div>
+				{/if}
+			</div>
+
+			<!-- Footer -->
+			<div
+				class="flex items-center justify-between border-t border-gray-100 bg-gray-50/80 px-4 py-2 text-[11px] text-gray-400"
+			>
+				<div class="flex items-center gap-3">
+					<span class="flex items-center gap-1">
+						<kbd
+							class="inline-flex items-center justify-center rounded border border-gray-200 bg-white px-1 py-0.5 font-mono text-[10px]"
+							>↑</kbd
+						>
+						<kbd
+							class="inline-flex items-center justify-center rounded border border-gray-200 bg-white px-1 py-0.5 font-mono text-[10px]"
+							>↓</kbd
+						>
+						<span class="ml-0.5">{m.commandPaletteNavigate()}</span>
+					</span>
+					<span class="flex items-center gap-1">
+						<kbd
+							class="inline-flex items-center justify-center rounded border border-gray-200 bg-white px-1 py-0.5 font-mono text-[10px]"
+							>↵</kbd
+						>
+						<span class="ml-0.5">{m.commandPaletteOpen()}</span>
+					</span>
+					<span class="flex items-center gap-1">
+						<kbd
+							class="inline-flex items-center justify-center rounded border border-gray-200 bg-white px-1 py-0.5 font-mono text-[10px]"
+							>esc</kbd
+						>
+						<span class="ml-0.5">{m.close()}</span>
+					</span>
+				</div>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<style>
+	.animate-in {
+		animation: palette-in 0.15s ease-out;
 	}
-
-	:global([data-cmdk-root]) {
-		@apply w-full max-w-md bg-white rounded-lg shadow-xl border border-gray-200 overflow-hidden;
-	}
-
-	:global([data-cmdk-input]) {
-		@apply w-full px-4 py-3 border-b border-gray-200 outline-none;
-	}
-
-	:global([data-cmdk-list]) {
-		@apply max-h-[300px] overflow-y-auto;
-	}
-
-	:global([data-cmdk-item]) {
-		@apply px-4 py-2 cursor-pointer hover:bg-gray-100
-               focus:bg-gray-100 focus:outline-none;
-	}
-
-	:global([data-cmdk-item][data-selected='true']) {
-		@apply bg-gray-100;
-	}
-
-	:global([data-cmdk-group-heading]) {
-		@apply px-4 py-2 text-xs text-gray-500 uppercase;
+	@keyframes palette-in {
+		from {
+			opacity: 0;
+			transform: scale(0.98) translateY(-8px);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
 	}
 </style>

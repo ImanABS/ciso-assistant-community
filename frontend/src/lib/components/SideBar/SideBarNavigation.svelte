@@ -3,19 +3,19 @@
 
 	import SideBarItem from '$lib/components/SideBar/SideBarItem.svelte';
 	import SideBarCategory from '$lib/components/SideBar/SideBarCategory.svelte';
-	import { Accordion, AccordionItem } from '@skeletonlabs/skeleton';
-	import { page } from '$app/stores';
+	import { Accordion } from '@skeletonlabs/skeleton-svelte';
+	import { page } from '$app/state';
 	import { URL_MODEL_MAP } from '$lib/utils/crud';
 	import { driverInstance } from '$lib/utils/stores';
 
-	const user = $page.data.user;
+	const user = page.data.user;
 
 	const items = navData.items
 		.map((item) => {
 			// Check and filter the sub-items based on user permissions
 			const filteredSubItems = item.items.filter((subItem) => {
 				if (subItem.exclude) {
-					return subItem.exclude.some((role) => user?.roles && !user.roles.includes(role));
+					return user?.roles?.some((role: string) => !subItem.exclude.includes(role)) ?? false;
 				} else if (subItem.permissions) {
 					return subItem.permissions?.some(
 						(permission) => user?.permissions && Object.hasOwn(user.permissions, permission)
@@ -37,44 +37,52 @@
 		.filter((item) => item.items.length > 0); // Filter out items with no sub-items
 
 	import { lastAccordionItem } from '$lib/utils/stores';
-
-	function lastAccordionItemOpened(value: string) {
-		lastAccordionItem.set(value);
+	interface Props {
+		sideBarVisibleItems: Record<string, boolean>;
 	}
 
-	function handleNavClick() {
+	let { sideBarVisibleItems }: Props = $props();
+
+	function handleValueChange(details: { value: string[] }) {
+		$lastAccordionItem = details.value;
 		setTimeout(() => {
 			$driverInstance?.moveNext();
 		}, 0);
 	}
 </script>
 
-<nav class="flex-grow scrollbar">
+<nav class="grow scrollbar">
 	<Accordion
-		autocollapse
-		spacing="space-y-4"
-		regionPanel="space-y-2"
-		caretClosed="-rotate-90"
-		caretOpen=""
+		value={$lastAccordionItem}
+		onValueChange={handleValueChange}
+		collapsible
+		class="space-y-4"
 	>
 		{#each items as item}
-			<!-- This commented code adds Accordion persistency but changes its visual behavior -->
-			<!-- {#if $lastAccordionItem === item.name}
-				<AccordionItem id={item.name} on:click={() => lastAccordionItemOpened(item.name)}  open>
-					<svelte:fragment slot="summary"><SideBarCategory {item} /></svelte:fragment>
-					<svelte:fragment slot="content"><SideBarItem item={item.items} /></svelte:fragment>
-				</AccordionItem>
-			{:else} -->
-			<AccordionItem
-				id={item.name.toLowerCase().replace(' ', '-')}
-				on:click={() => lastAccordionItemOpened(item.name)}
-				on:click={handleNavClick}
-				open={$lastAccordionItem === item.name}
-			>
-				<svelte:fragment slot="summary"><SideBarCategory {item} /></svelte:fragment>
-				<svelte:fragment slot="content"><SideBarItem item={item.items} /></svelte:fragment>
-			</AccordionItem>
-			<!-- {/if} -->
+			{#if sideBarVisibleItems && sideBarVisibleItems[item.name] !== false}
+				<Accordion.Item value={item.name} id={item.name.toLowerCase().replace(' ', '-')}>
+					<Accordion.ItemTrigger class="flex w-full items-center cursor-pointer">
+						<SideBarCategory {item} />
+						<Accordion.ItemIndicator
+							class="transition-transform duration-200 data-[state=open]:rotate-0 data-[state=closed]:-rotate-90"
+						>
+							<svg
+								xmlns="http://www.w3.org/2000/svg"
+								width="14px"
+								height="14px"
+								viewBox="0 0 448 512"
+							>
+								<path
+									d="M201.4 374.6c12.5 12.5 32.8 12.5 45.3 0l160-160c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L224 306.7 86.6 169.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l160 160z"
+								/>
+							</svg>
+						</Accordion.ItemIndicator>
+					</Accordion.ItemTrigger>
+					<Accordion.ItemContent class="space-y-2">
+						<SideBarItem item={item.items} {sideBarVisibleItems} />
+					</Accordion.ItemContent>
+				</Accordion.Item>
+			{/if}
 		{/each}
 	</Accordion>
 </nav>

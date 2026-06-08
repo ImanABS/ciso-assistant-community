@@ -1,154 +1,265 @@
 <script lang="ts">
 	import { safeTranslate } from '$lib/utils/i18n';
 	import type { CacheLock } from '$lib/utils/types';
-	import { beforeUpdate, onMount } from 'svelte';
-	import { formFieldProxy } from 'sveltekit-superforms';
-	import { createEventDispatcher } from 'svelte';
+	import { onMount } from 'svelte';
+	import { formFieldProxy, type SuperForm } from 'sveltekit-superforms';
+	import { getSearchTarget, normalizeSearchString } from '$lib/utils/helpers';
 	import MultiSelect from 'svelte-multiselect';
 	import { getContext, onDestroy } from 'svelte';
+	import * as m from '$paraglide/messages.js';
+	import { run } from 'svelte/legacy';
 
 	interface Option {
 		label: string;
-		value: string;
+		value: string | number;
 		suggested?: boolean;
+		translatedLabel?: string;
+		path?: string[];
+		infoString?: {
+			string: string;
+			position: 'suffix' | 'prefix';
+			classes?: string;
+		};
+		contentType?: string;
 	}
 
 	type FieldContext = 'form-input' | 'filter-input';
 
-	export let fieldContext: FieldContext = 'form-input';
+	interface Props {
+		fieldContext?: FieldContext;
+		label?: string | undefined;
+		baseClass?: string;
+		field: string;
+		valuePath?: string; // Default will be handled in destructuring
+		helpText?: string | undefined;
+		form: SuperForm<Record<string, unknown>, any>;
+		resetForm?: boolean;
+		multiple?: boolean;
+		nullable?: boolean;
+		mandatory?: boolean;
+		disabled?: boolean;
+		hidden?: boolean;
+		translateOptions?: boolean;
+		options?: Option[];
+		optionsEndpoint?: string;
+		optionsDetailedUrlParameters?: [string, string][];
+		optionsLabelField?: string;
+		optionsValueField?: string;
+		browserCache?: RequestCache;
+		optionsExtraFields?: [string, string][];
+		additionalMultiselectOptions?: Record<string, any>;
+		optionsInfoFields?: {
+			fields: {
+				field: string; // Field name in the object
+				path?: string; // Optional, used for nested fields};
+				translate?: boolean; // Optional, used for translating the field
+				display?: (value: any) => string;
+			}[];
+			position?: 'suffix' | 'prefix'; // Default: 'suffix'
+			separator?: string; // Default: ' '
+			classes?: string; // Optional, used for custom styling
+		};
+		pathField?: string;
+		optionsSuggestions?: any[];
+		optionsSelf?: any;
+		optionsSelfSelect?: boolean;
+		allowUserOptions?: boolean | 'append';
+		onChange?: (value: any) => void;
+		cacheLock?: CacheLock;
+		cachedValue?: any[] | undefined;
+		cachedOptions?: any[] | undefined;
+		includeAllOptionFields?: boolean;
+		mount?: (value: any) => void;
+		optionSnippet?: import('svelte').Snippet<[Record<string, any>]>;
+		placeholder?: string;
+		lazy?: boolean;
+		lazyLimit?: number;
+		lazyThreshold?: number;
+		maxVisibleChips?: number;
+	}
 
-	export let label: string | undefined = undefined;
-	export let field: string;
-	export let helpText: string | undefined = undefined;
+	let {
+		fieldContext = 'form-input',
+		label = undefined,
+		baseClass = '',
+		field,
+		valuePath = field,
+		helpText = undefined,
+		form,
+		resetForm = false,
+		multiple = false,
+		nullable = false,
+		mandatory = false,
+		disabled = false,
+		hidden = false,
+		translateOptions = true,
+		options = [],
+		optionsEndpoint = '',
+		optionsDetailedUrlParameters = [],
+		optionsLabelField = 'name',
+		optionsValueField = 'id',
+		browserCache = 'default',
+		optionsExtraFields = [],
+		optionsInfoFields = {
+			fields: [],
+			position: 'suffix',
+			separator: ' ',
+			classes: 'text-surface-500'
+		},
+		additionalMultiselectOptions = {},
+		pathField = '',
+		optionsSuggestions = [],
+		optionsSelf = null,
+		optionsSelfSelect = false,
+		allowUserOptions = false,
+		onChange = () => {},
+		includeAllOptionFields = false,
+		cacheLock = {
+			promise: new Promise((res) => res(null)),
+			resolve: (x: any) => x
+		},
+		cachedValue = $bindable(),
+		cachedOptions = $bindable(),
+		mount = () => null,
+		optionSnippet = undefined,
+		placeholder = '',
+		lazy = false,
+		lazyLimit = 10,
+		lazyThreshold = 50,
+		maxVisibleChips: _maxVisibleChips = 3
+	}: Props = $props();
 
-	export let form;
-	export let multiple = false;
-	export let nullable = false;
-	export let mandatory = false;
+	// Clamp to supported CSS range (chip-max-1 through chip-max-5 in app.css)
+	const maxVisibleChips = Math.max(1, Math.min(5, _maxVisibleChips));
 
-	export let hidden = false;
-	export let translateOptions = true;
+	if (translateOptions) {
+		options = options.map((option) => {
+			return {
+				...option,
+				translatedLabel:
+					safeTranslate(option.label) !== option.label
+						? safeTranslate(option.label)
+						: safeTranslate(option.value) !== option.value
+							? safeTranslate(option.value)
+							: option.label
+			};
+		});
+	}
 
-	export let options: Option[] = [];
-	/**
-	 * optionsEndpoint to fetch options from
-	 * @example 'users' -> fetches from /users/
-	 */
-	export let optionsEndpoint: string = '';
+	let optionHashmap: Record<string, Option> = {};
+	let _disabled = $state(disabled);
 
-	/**
-	 * Additional endpoint URL parameters with details (ID, urn, ...)
-	 * @format Array of [parameter, identifier] tuples
-	 * @example [['ebios_rm_studies', 'uuid']] -> <endpointUrl>?...&ebios_rm_studies=uuid"
-	 */
-	export let optionsDetailedUrlParameters: [string, string][] = [];
+	const { value, errors, constraints } = formFieldProxy(form, valuePath);
 
-	/**
-	 * Field path to use for option labels (supports dot notation for nested fields)
-	 * @default 'name'
-	 * @example 'email' -> object.email
-	 * @example 'profile.full_name' -> object.profile.full_name
-	 * @special 'auto' -> combines ref_id with name/description
-	 */
-	export let optionsLabelField: string = 'name';
-
-	/**
-	 * Field path to use for option values (supports dot notation for nested fields)
-	 * @default 'id'
-	 * @example 'uuid' -> object.uuid
-	 * @example 'meta.identifier' -> object.meta.identifier
-	 */
-	export let optionsValueField: string = 'id';
-
-	export let browserCache: RequestCache = 'default';
-
-	/**
-	 * Additional fields to display in labels as prefixes
-	 * @format Array of [fieldPath, type] tuples
-	 * @example [['folder.str', 'string']] -> displays "folder_value/name"
-	 * @example [['department', 'string'], ['team', 'string']] -> "department_value/team_value/name"
-	 */
-	export let optionsExtraFields: [string, string][] = [];
-
-	/**
-	 * Suggested options to highlight (matches by optionsValueField)
-	 * @example [{id: 1, name: 'Suggested'}]
-	 */
-	export let optionsSuggestions: any[] = [];
-
-	/**
-	 * Current user/object to exclude from options (unless optionsSelfSelect=true)
-	 * @example Current user object to prevent self-selection
-	 */
-	export let optionsSelf: any = null;
-
-	/**
-	 * Whether to include the self object in selectable options
-	 * @default false
-	 * @example true -> allows selecting your own user account
-	 */
-	export let optionsSelfSelect: boolean = false;
-	export let allowUserOptions: boolean | 'append' = false;
-
-	export let cacheLock: CacheLock = {
-		promise: new Promise((res) => res(null)),
-		resolve: (x) => x
-	};
-	export let cachedValue: any[] | undefined = undefined;
-
-	const { value, errors, constraints } = formFieldProxy(form, field);
-
-	let selected: (typeof options)[] = [];
-	let selectedValues: (string | undefined)[] = [];
+	let selected: typeof options = $state([]);
+	let selectedValues: (string | undefined)[] = $derived(
+		selected.map((item) => item.value || item.label || item)
+	);
 	let isInternalUpdate = false;
-	let optionsLoaded = Boolean(options.length);
-	let initialValue = $value; // Store initial value
+	let optionsLoaded = $state(Boolean(options.length));
+	const initialValue = resetForm ? undefined : $value;
 	const default_value = nullable ? null : selectedValues[0];
 
 	const multiSelectOptions = {
 		minSelect: $constraints && $constraints.required === true ? 1 : 0,
 		maxSelect: multiple ? undefined : 1,
-		liSelectedClass: multiple ? '!chip !variant-filled' : '!bg-transparent',
-		inputClass: 'focus:!ring-0 focus:!outline-none',
-		outerDivClass: '!select',
-		closeDropdownOnSelect: !multiple
+		liSelectedClass: multiple ? '!chip !preset-filled' : '!bg-transparent',
+		inputClass: 'focus:ring-0! focus:outline-hidden!',
+		closeDropdownOnSelect: !multiple,
+		...additionalMultiselectOptions
 	};
 
-	const dispatch = createEventDispatcher();
-	let isLoading = false;
+	let isLoading = $state(false);
+	let lazySearchPending = $state(false);
+	let lazyHasSearched = $state(false);
+	let lazyDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+	let lazyInputEl = $state<HTMLInputElement | null>(null);
+	let effectiveLazy = $state(lazy);
+	const LAZY_HINT_VALUE = '__lazy_hint__';
+	let multiSelectOpen = $state(false);
+	const passthroughFilter = () => true;
 	const updateMissingConstraint = getContext<Function>('updateMissingConstraint');
+
+	function buildEndpoint(extra?: Record<string, string>, baseOverride?: string) {
+		let endpoint = `/${baseOverride ?? optionsEndpoint}`;
+		const urlParams = new URLSearchParams();
+
+		if (Array.isArray(optionsDetailedUrlParameters)) {
+			for (const [param, value] of optionsDetailedUrlParameters) {
+				if (param && value) {
+					urlParams.append(encodeURIComponent(param), encodeURIComponent(value));
+				}
+			}
+		}
+
+		if (extra) {
+			for (const [k, v] of Object.entries(extra)) {
+				urlParams.set(k, v);
+			}
+		}
+
+		const queryString = urlParams.toString();
+		if (queryString) {
+			endpoint += endpoint.includes('?') ? '&' : '?';
+			endpoint += queryString;
+		}
+		return endpoint;
+	}
+
 	async function fetchOptions() {
 		isLoading = true;
 		try {
 			if (optionsEndpoint) {
-				let endpoint = `/${optionsEndpoint}`;
-				const urlParams = new URLSearchParams();
-
-				if (Array.isArray(optionsDetailedUrlParameters)) {
-					for (const [param, value] of optionsDetailedUrlParameters) {
-						if (param && value) {
-							urlParams.append(encodeURIComponent(param), encodeURIComponent(value));
+				if (lazy) {
+					// Probe with a capped fetch to decide lazy vs eager
+					const probeEndpoint = buildEndpoint({
+						limit: String(lazyThreshold + 1)
+					});
+					const probeResponse = await fetch(probeEndpoint, { cache: browserCache });
+					if (probeResponse.ok) {
+						const probeData = await probeResponse.json();
+						const items = probeData?.results ?? probeData;
+						const totalCount = probeData?.count ?? (Array.isArray(items) ? items.length : 0);
+						const returnedCount = Array.isArray(items) ? items.length : 0;
+						if (totalCount <= lazyThreshold && returnedCount >= totalCount) {
+							// Small dataset with complete response — use eager mode
+							effectiveLazy = false;
+							if (returnedCount > 0) {
+								options = processOptions(items);
+							}
+							const isRequired = mandatory || $constraints?.required;
+							const hasNoOptions = options.length === 0;
+							const isMissing = isRequired && hasNoOptions;
+							if (updateMissingConstraint) {
+								updateMissingConstraint(field, isMissing);
+							}
+						} else {
+							// Large dataset — stay in lazy mode, only fetch selected items
+							effectiveLazy = true;
+							await fetchSelectedItems();
+						}
+					} else {
+						// Probe failed — fall back to lazy mode
+						effectiveLazy = true;
+						await fetchSelectedItems();
+					}
+				} else {
+					const endpoint = buildEndpoint();
+					const response = await fetch(endpoint, { cache: browserCache });
+					if (response.ok) {
+						const data = await response.json().then((res) => res?.results ?? res);
+						if (data.length > 0) {
+							options = processOptions(data);
+						}
+						const isRequired = mandatory || $constraints?.required;
+						const hasNoOptions = options.length === 0;
+						const isMissing = isRequired && hasNoOptions;
+						if (updateMissingConstraint) {
+							updateMissingConstraint(field, isMissing);
 						}
 					}
 				}
-
-				const queryString = urlParams.toString();
-				if (queryString) {
-					endpoint += endpoint.includes('?') ? '&' : '?';
-					endpoint += queryString;
-				}
-				const response = await fetch(endpoint, { cache: browserCache });
-				if (response.ok) {
-					const data = await response.json().then((res) => res?.results ?? res);
-					options = processOptions(data);
-					const isRequired = mandatory || $constraints?.required;
-					const hasNoOptions = options.length === 0;
-					const isMissing = isRequired && hasNoOptions;
-					if (updateMissingConstraint) {
-						updateMissingConstraint(field, isMissing);
-					}
-					optionsLoaded = true;
-				}
+				optionsLoaded = true;
 			}
 			// After options are loaded, set initial selection using stored initial value
 			if (initialValue) {
@@ -167,8 +278,65 @@
 		}
 	}
 
+	async function fetchSelectedItems() {
+		if (!initialValue) return;
+		const ids = Array.isArray(initialValue) ? initialValue : [initialValue];
+		if (ids.length === 0) return;
+
+		const lazyBase = effectiveLazy ? `${optionsEndpoint}/autocomplete` : undefined;
+		const endpoint = buildEndpoint({ id: ids.join(',') }, lazyBase);
+		const response = await fetch(endpoint, { cache: browserCache });
+		if (response.ok) {
+			const data = await response.json().then((res) => res?.results ?? res);
+			if (data.length > 0) {
+				options = processOptions(data);
+			}
+		}
+	}
+
+	async function lazySearch(searchTerm: string) {
+		if (!effectiveLazy || !optionsEndpoint) return;
+		if (!searchTerm || searchTerm.length < 2) {
+			// Keep only already-selected options visible
+			options = selected.length > 0 ? [...selected] : [];
+			lazyHasSearched = false;
+			return;
+		}
+
+		isLoading = true;
+		lazyHasSearched = true;
+		try {
+			const lazyBase = `${optionsEndpoint}/autocomplete`;
+			const endpoint = buildEndpoint(
+				{
+					search: searchTerm,
+					limit: String(lazyLimit)
+				},
+				lazyBase
+			);
+			const response = await fetch(endpoint, { cache: 'no-store' });
+			if (response.ok) {
+				const data = await response.json().then((res) => res?.results ?? res);
+				const searchResults = data.length > 0 ? processOptions(data) : [];
+				// Merge with currently selected items so they remain visible
+				const selectedSet = new Set(selected.map((s) => s.value));
+				const merged = [...selected];
+				for (const opt of searchResults) {
+					if (!selectedSet.has(opt.value)) {
+						merged.push(opt);
+					}
+				}
+				options = merged;
+			}
+		} catch (error) {
+			console.error(`Error searching ${optionsEndpoint}:`, error);
+		} finally {
+			isLoading = false;
+		}
+	}
+
 	function processOptions(objects: any[]) {
-		const append = (x, y) => (!y ? x : !x || x == '' ? y : x + ' - ' + y);
+		const append = (x: string, y: string) => (!y ? x : !x || x == '' ? y : x + ' - ' + y);
 
 		return objects
 			.map((object) => {
@@ -182,17 +350,56 @@
 					return value !== undefined ? value.toString() : '';
 				});
 
-				const fullLabel =
-					optionsExtraFields.length > 0 ? `${extraParts.join('/')}/${mainLabel}` : mainLabel;
+				const path: string[] =
+					pathField && object?.[pathField]
+						? object[pathField].map((obj: { str: string; id: string }) => {
+								return obj.str;
+							})
+						: [];
 
-				return {
+				const infoFields = optionsInfoFields.fields
+					.map((f) => {
+						const value = getNestedValue(object, f.field, f.path);
+						return f.display ? f.display(value) : f.translate ? safeTranslate(value) : value;
+					})
+					.filter(Boolean);
+
+				let infoString: { string: string; position: 'suffix' | 'prefix' } | undefined = undefined;
+				if (infoFields.length > 0) {
+					const separator = optionsInfoFields.separator || ' ';
+					const position = optionsInfoFields.position || 'suffix';
+					infoString = {
+						string: infoFields.join(separator),
+						position: position,
+						...optionsInfoFields
+					};
+				}
+
+				const fullLabel = `${extraParts.length ? extraParts.join('/') + '/' : ''}${mainLabel}`;
+				const valueField = getNestedValue(object, optionsValueField);
+
+				const opt = {
 					label: fullLabel,
-					value: getNestedValue(object, optionsValueField),
+					value: valueField,
 					suggested: optionsSuggestions?.some(
-						(s) =>
-							getNestedValue(s, optionsValueField) === getNestedValue(object, optionsValueField)
-					)
+						(s) => getNestedValue(s, optionsValueField) === valueField
+					),
+					translatedLabel:
+						safeTranslate(fullLabel) !== fullLabel
+							? safeTranslate(fullLabel)
+							: safeTranslate(valueField) !== valueField
+								? safeTranslate(valueField)
+								: fullLabel,
+					path,
+					infoString,
+					contentType: object?.content_type || ''
 				};
+
+				if (includeAllOptionFields) {
+					return { ...opt, ...object };
+				} else {
+					return opt;
+				}
 			})
 			.filter(
 				(option) =>
@@ -202,7 +409,15 @@
 				// Show suggested items first
 				if (a.suggested && !b.suggested) return -1;
 				if (!a.suggested && b.suggested) return 1;
-				return 0;
+				// Sort folder by path
+				if (a.contentType && b.contentType) {
+					const aPath = a.path.join('') + a.label;
+					const bPath = b.path.join('') + b.label;
+					const alphaCompare = aPath.localeCompare(bPath);
+					return alphaCompare !== 0 ? alphaCompare : aPath.length - bPath.length;
+				}
+
+				return a.translatedLabel!.toLowerCase().localeCompare(b.translatedLabel!.toLowerCase());
 			});
 	}
 
@@ -213,24 +428,35 @@
 
 	onMount(async () => {
 		await fetchOptions();
-		dispatch('mount', $value);
+		mount($value);
 		const cacheResult = await cacheLock.promise;
 		if (cacheResult && cacheResult.length > 0) {
-			selected = cacheResult.map((value) => optionHashmap[value]).filter(Boolean);
+			selected = cacheResult.map((value: string | number) => optionHashmap[value]).filter(Boolean);
 		}
 	});
 
-	beforeUpdate(() => {
+	$effect(() => {
 		if (!isInternalUpdate && $value && optionsLoaded && $value !== initialValue) {
-			selected = options.filter((item) =>
-				Array.isArray($value) ? $value.includes(item.value) : item.value === $value
-			);
+			const valueArray = Array.isArray($value) ? $value : [$value];
+			if (valueArray.length !== 0) {
+				selected = options.filter((item) => valueArray.includes(item.value));
+			}
 		}
 	});
 
-	function handleSelectChange() {
-		dispatch('change', $value);
-		dispatch('cache', selected);
+	async function handleSelectChange() {
+		if (allowUserOptions && selectedValues.length > 0) {
+			for (const val of selectedValues) {
+				if (!options.some((opt) => opt.value === val)) {
+					const newOption: Option = { label: val as string, value: val as string };
+					options = [...options, newOption];
+				}
+			}
+		}
+
+		// change($value);
+		await onChange($value);
+		// dispatch('cache', selected);
 	}
 
 	function arraysEqual(
@@ -257,16 +483,19 @@
 		return true;
 	}
 
-	$: optionHashmap = options.reduce((acc, option) => {
-		acc[option.value] = option;
-		return acc;
-	}, {});
+	run(() => {
+		optionHashmap = options.reduce((acc, option) => {
+			acc[option.value] = option;
+			return acc;
+		}, {});
+	});
 
-	$: cachedValue = selected.map((option) => option.value);
+	run(() => {
+		cachedValue = selected.map((option) => option.value);
+		cachedOptions = selected;
+	});
 
-	$: selectedValues = selected.map((item) => item.value || item.label || item);
-
-	$: {
+	run(() => {
 		// Only update value after options are loaded
 		if (!isInternalUpdate && optionsLoaded && !arraysEqual(selectedValues, $value)) {
 			isInternalUpdate = true;
@@ -274,18 +503,89 @@
 			handleSelectChange();
 			isInternalUpdate = false;
 		}
-	}
+	});
 
-	$: disabled = selected.length && options.length === 1 && $constraints?.required;
+	run(() => {
+		_disabled =
+			disabled ||
+			(Boolean(selected.length && options.length === 1 && $constraints?.required) &&
+				!effectiveLazy);
+	});
+
+	$effect(() => {
+		if (!effectiveLazy || !lazyInputEl) return;
+		const el = lazyInputEl;
+		const handler = () => {
+			const text = el.value;
+			if (lazyDebounceTimer) clearTimeout(lazyDebounceTimer);
+			if (text.length >= 2) {
+				lazySearchPending = true;
+			} else {
+				lazySearchPending = false;
+			}
+			lazyDebounceTimer = setTimeout(() => {
+				lazySearchPending = false;
+				lazySearch(text);
+			}, 300);
+		};
+		el.addEventListener('input', handler);
+		return () => el.removeEventListener('input', handler);
+	});
 
 	onDestroy(() => {
+		if (lazyDebounceTimer) clearTimeout(lazyDebounceTimer);
 		if (updateMissingConstraint) {
 			updateMissingConstraint(field, false);
 		}
 	});
+
+	const searchTargetMap = $derived(new Map(options.map((opt) => [opt, getSearchTarget(opt)])));
+
+	// Chip overflow: hide chips beyond max when dropdown is closed (multi-select only)
+	const overflowCount = $derived(
+		multiple && maxVisibleChips > 0 && !multiSelectOpen
+			? Math.max(0, selected.length - maxVisibleChips)
+			: 0
+	);
+
+	// Svelte action: restyle a chip's <li> as a "+N" badge (hide × button, muted background)
+	function styleAsBadge(node: HTMLElement) {
+		const li = node.closest('li');
+		if (!li) return;
+		li.style.cssText =
+			'background: var(--color-surface-300, #d1d5db) !important; cursor: pointer !important; color: var(--color-surface-700, #374151) !important;';
+		const removeBtn = li.querySelector('button');
+		if (removeBtn) (removeBtn as HTMLElement).style.display = 'none';
+		return {
+			destroy() {
+				li.style.cssText = '';
+				if (removeBtn) (removeBtn as HTMLElement).style.display = '';
+			}
+		};
+	}
+
+	// CSS class added to outerDiv — matching rules in app.css hide overflow chips via :nth-child
+	const overflowCssClass = $derived(overflowCount > 0 ? `chip-max-${maxVisibleChips}` : '');
+
+	const fastFilter = (opt: Option, searchText: string) => {
+		if (!searchText) {
+			return true;
+		}
+
+		const target = searchTargetMap.get(opt) || '';
+
+		const normalizedSearch = normalizeSearchString(searchText);
+		const searchTerms = normalizedSearch.split(' ').filter(Boolean);
+
+		if (searchTerms.length === 0) {
+			return true;
+		}
+
+		return searchTerms.every((term) => target.includes(term));
+	};
 </script>
 
-<div {hidden}>
+<div class={baseClass} hidden={hidden || undefined}>
 	{#if label !== undefined}
 		{#if $constraints?.required || mandatory}
 			<label class="text-sm font-semibold" for={field}
@@ -312,32 +612,122 @@
 		class="control overflow-x-clip flex items-center space-x-2"
 		data-testid="{fieldContext}-{field.replaceAll('_', '-')}"
 	>
-		<input type="hidden" name={field} value={$value ? $value : ''} />
+		{#if Array.isArray($value)}
+			{#each $value as val}
+				<input type="hidden" name={field} value={val} />
+			{/each}
+		{:else if $value}
+			<input type="hidden" name={field} value={$value} />
+		{/if}
+
 		<MultiSelect
 			bind:selected
-			{options}
+			bind:open={multiSelectOpen}
+			options={effectiveLazy && selected.length > 0 && !lazyHasSearched
+				? [...options, { label: m.typeToSearch(), value: LAZY_HINT_VALUE, disabled: true }]
+				: options}
 			{...multiSelectOptions}
-			disabled={disabled || $$restProps.disabled}
+			outerDivClass="!input !bg-surface-100 !px-2 !flex {overflowCssClass}"
+			disabled={_disabled}
 			allowEmpty={true}
-			{...$$restProps}
-			let:option
 			{allowUserOptions}
+			duplicates={false}
+			key={JSON.stringify}
+			filterFunc={effectiveLazy ? passthroughFilter : fastFilter}
+			noMatchingOptionsMsg={effectiveLazy
+				? isLoading || lazySearchPending
+					? m.searching()
+					: m.typeToSearch()
+				: undefined}
+			placeholder={placeholder || (effectiveLazy ? m.typeToSearch() : '')}
+			bind:input={lazyInputEl}
 		>
-			{#if option.suggested}
-				<span class="text-indigo-600">{option.label}</span>
-				<span class="text-sm text-gray-500"> (suggested)</span>
-			{:else if translateOptions && option.label}
-				{safeTranslate(option.label)}
-			{:else}
-				{option.label || option}
-			{/if}
+			{#snippet option({ option })}
+				{#if option.value === LAZY_HINT_VALUE}
+					<span class="text-sm italic text-surface-500">{option.label}</span>
+				{:else if optionSnippet}
+					{@render optionSnippet?.(option)}
+				{:else}
+					{#if option.infoString?.position === 'prefix'}
+						<span class="text-xs {option.infoString.classes}">
+							{option.infoString.string}
+						</span>
+					{/if}
+					{#if option.path}
+						<span>
+							{#each option.path as item}
+								<span class="text-surface-500 font-light">
+									{item} /&nbsp;
+								</span>
+							{/each}
+						</span>
+					{/if}
+					{#if translateOptions && option}
+						{#if field === 'ro_to_couple'}
+							{@const [firstPart, ...restParts] = option.label.split(' - ')}
+							{safeTranslate(firstPart)} - {restParts.join(' - ')}
+						{:else}
+							{option.translatedLabel}
+						{/if}
+					{:else}
+						{option.label || option}
+					{/if}
+					{#if option.infoString?.position === 'suffix'}
+						<span class="text-xs {option.infoString.classes}">
+							{option.infoString.string}
+						</span>
+					{/if}
+					{#if option.suggested}
+						<span class="text-sm text-surface-500"> {m.suggestedParentheses()}</span>
+					{/if}
+				{/if}
+			{/snippet}
+			{#snippet selectedItem({ option })}
+				{@const chipIdx = selected.findIndex((s) => s.value === option.value)}
+				{#if overflowCount > 0 && chipIdx === maxVisibleChips}
+					<span use:styleAsBadge>+{overflowCount}</span>
+				{:else}
+					{#if option.infoString?.position === 'prefix'}
+						<span class="text-xs text-surface-500">&nbsp;{option.infoString.string}</span>
+					{/if}
+					{#if option.path}
+						<span>
+							{#each option.path as item, idx}
+								<span class="text-xs font-light">
+									{item}
+									{#if idx < option.path.length - 1}
+										&nbsp;/
+									{/if}&nbsp;
+								</span>
+							{/each}
+						</span>
+					{/if}
+					{#if translateOptions && option}
+						{#if field === 'ro_to_couple'}
+							{@const [firstPart, ...restParts] = option.label.split(' - ')}
+							{safeTranslate(firstPart)} - {restParts.join(' - ')}
+						{:else}
+							{option.translatedLabel}
+						{/if}
+					{:else}
+						{option.label || option}
+					{/if}
+					{#if option.infoString?.position === 'suffix'}
+						<span class="text-xs text-surface-500">&nbsp;{option.infoString.string}</span>
+					{/if}
+					{#if option.suggested}
+						<span class="text-sm text-surface-500"> {m.suggestedParentheses()}</span>
+					{/if}
+				{/if}
+			{/snippet}
 		</MultiSelect>
 		{#if isLoading}
 			<svg
-				class="animate-spin h-5 w-5 text-primary-500"
+				class="animate-spin h-5 w-5 text-primary-500 loading-spinner"
 				xmlns="http://www.w3.org/2000/svg"
 				fill="none"
 				viewBox="0 0 24 24"
+				data-testid="loading-spinner"
 			>
 				<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"
 				></circle>
@@ -350,6 +740,6 @@
 		{/if}
 	</div>
 	{#if helpText}
-		<p class="text-sm text-gray-500">{helpText}</p>
+		<p class="text-sm text-gray-500 whitespace-pre-line">{helpText}</p>
 	{/if}
 </div>
